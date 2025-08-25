@@ -1,6 +1,7 @@
 [![Netlify Status](https://api.netlify.com/api/v1/badges/02c86e8c-135a-401e-98aa-0f3bb2397977/deploy-status)](https://app.netlify.com/sites/factgrid-graphbuilder/deploys)
 
-# [Wikidata Graph Builder](https://angryloki.github.io/wikidata-graph-builder/)
+# FactGrid Graph Builder
+Fork from [Wikidata Graph Builder](https://angryloki.github.io/wikidata-graph-builder/)
 Visualize an instance of [Wikibase](https://wikiba.se/) items using [d3.js](http://d3js.org/).
 
 ## Main features
