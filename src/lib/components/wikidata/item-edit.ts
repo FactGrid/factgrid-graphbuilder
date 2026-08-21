@@ -2,12 +2,43 @@ import type {
 	AutocompleteItem, AutocompleteResult, LangValue, LoadMoreFunction, ValueItem,
 } from '../common/autocomplete-input';
 import {MwApiService} from '$lib/mw-api-service';
+import {QueryService} from '$lib/query-service';
 import type {WikibaseEntityCommon} from '$lib/wdtypes';
 
 export type ValueType = 'property' | 'item';
 
+const instanceOfProperty = 'P2';
+
+const getInstanceOfLabels = async (ids: string[], language: string, abortSignal: AbortSignal): Promise<Record<string, string>> => {
+	if (ids.length === 0) {
+		return {};
+	}
+
+	const values = ids.map(id => `wd:${id}`).join(' ');
+	const languageParameter = language === 'en' ? 'en' : `${language},en`;
+	const query = `\
+SELECT ?item ?typeLabel WHERE {
+  VALUES ?item { ${values} }
+  ?item wdt:${instanceOfProperty} ?type .
+  SERVICE wikibase:label { bd:serviceParam wikibase:language "${languageParameter}" }
+}`;
+
+	const queryService = QueryService.getInstance();
+	const rows = await queryService.getFlat(query, {signal: abortSignal});
+
+	const labels: Record<string, string> = {};
+	for (const row of rows) {
+		const id = row.item.split('/').pop()!;
+		if (!labels[id]) {
+			labels[id] = row.typeLabel;
+		}
+	}
+
+	return labels;
+};
+
 // eslint-disable-next-line max-params
-export const searchEntities = async (type: ValueType, search: string, language: string | undefined, abortSignal: AbortSignal, after?: number): Promise<AutocompleteResult> => {
+export const searchEntities = async (type: ValueType, search: string, language: string | undefined, abortSignal: AbortSignal, after?: number, datatype?: string): Promise<AutocompleteResult> => {
 	if (language === undefined) {
 		language = 'en';
 	}
@@ -65,7 +96,8 @@ export const searchEntities = async (type: ValueType, search: string, language: 
 	};
 
 	const resp = (await wikidataClient.call(query, {signal: abortSignal})) as SearchResults;
-	autocompleteItems = resp.search.map(item => ({
+	const searchResults = datatype ? resp.search.filter(item => item.datatype === datatype) : resp.search;
+	autocompleteItems = searchResults.map(item => ({
 		value: {
 			id: item.id,
 			label: item.display.label,
@@ -75,8 +107,22 @@ export const searchEntities = async (type: ValueType, search: string, language: 
 		match: item.match,
 	}));
 
+	if (type === 'item' && autocompleteItems.length > 0) {
+		try {
+			const instanceOfLabels = await getInstanceOfLabels(autocompleteItems.map(item => item.value.id), language, abortSignal);
+			autocompleteItems = autocompleteItems.map(item => ({
+				...item,
+				value: {...item.value, instanceOf: instanceOfLabels[item.value.id]},
+			}));
+		} catch (error_: unknown) {
+			if ((error_ as Error).name !== 'AbortError') {
+				throw error_;
+			}
+		}
+	}
+
 	if (resp['search-continue']) {
-		loadMore = async (abortSignal: AbortSignal) => searchEntities(type, search, language, abortSignal, resp['search-continue']);
+		loadMore = async (abortSignal: AbortSignal) => searchEntities(type, search, language, abortSignal, resp['search-continue'], datatype);
 	}
 
 	return {

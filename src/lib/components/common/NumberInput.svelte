@@ -3,7 +3,7 @@
     import { createEventDispatcher } from "svelte";
     import type { HTMLInputAttributes } from "svelte/elements";
     import IconEx from "./IconEx.svelte";
-    import InlineEdit from "./InlineEdit.svelte";
+    import { Input } from "$lib/components/ui/input/index.js";
     import { taphold } from "./taphold";
     import { getid } from "./utils";
     interface $$Props extends HTMLInputAttributes {
@@ -14,7 +14,6 @@
         max?: number | undefined;
         treatZeroAsUndefined?: boolean;
         required?: boolean;
-        edit?: boolean;
     }
 
     export let id = getid();
@@ -23,15 +22,18 @@
     export let max: number | undefined = Number.MAX_SAFE_INTEGER;
     export let treatZeroAsUndefined = false;
     export let required = false;
-    export let edit = false;
 
     let cls = "";
     export { cls as class };
 
     let textValue: string | undefined;
 
-    let onBlur = () => {
+    const onBlur = () => {
+        const oldValue = value;
         value = valueFromText(textValue);
+        if (value !== oldValue) {
+            dispatch("change");
+        }
     };
 
     const dispatch = createEventDispatcher();
@@ -92,7 +94,7 @@
         event.stopPropagation();
         event.preventDefault();
 
-        if (!edit && changed) {
+        if (changed) {
             dispatch("change");
         }
     };
@@ -116,7 +118,7 @@
         event.preventDefault();
         event.stopPropagation();
 
-        if (!edit && changed) {
+        if (changed) {
             dispatch("change");
         }
     };
@@ -138,24 +140,25 @@
     $: canIncrement = max === undefined || value === undefined || value < max;
 </script>
 
-<!-- svelte-ignore a11y-click-events-have-key-events -->
-<InlineEdit
-    bind:edit
-    {id}
-    bind:value={textValue}
-    class="group {cls}"
-    on:input={onInput}
-    on:blur={onBlur}
-    on:keydown={onKeyDown}
-    on:change
-    inputmode="numeric"
-    role="spinbutton"
-    aria-valuenow={value}
-    aria-valuemin={min}
-    aria-valuemax={max}
-    {...$$restProps}
->
-    <svelte:fragment slot="editbuttons">
+<div class="relative flex items-center group {cls}">
+    <Input
+        {id}
+        bind:value={textValue}
+        oninput={onInput}
+        onblur={onBlur}
+        onkeydown={onKeyDown}
+        inputmode="numeric"
+        role="spinbutton"
+        aria-valuenow={value}
+        aria-valuemin={min}
+        aria-valuemax={max}
+        class="pr-14"
+        {...$$restProps}
+    />
+    <div
+        class="absolute right-1 flex items-center gap-0.5 opacity-0 nohover:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity"
+    >
+        <!-- svelte-ignore a11y-click-events-have-key-events -->
         <button
             use:taphold={onDecrement}
             on:click={(event) => {
@@ -164,20 +167,17 @@
             }}
             aria-disabled={!canDecrement}
             tabindex="-1"
-            class="w-6 flex-none flex justify-center items-center
+            class="w-6 h-7 flex-none flex justify-center items-center rounded
             {canDecrement
-                ? 'cursor-pointer hover:bg-gray-300/5'
-                : 'cursor-default'}
-            {edit
-                ? 'opacity-100'
-                : 'opacity-0 nohover:opacity-100 group-hover:opacity-100'}
-            transition-opacity"
+                ? 'cursor-pointer hover:bg-brand-100 dark:hover:bg-brand-800/60'
+                : 'cursor-default'}"
         >
             <IconEx
-                class="w-5 h-5 fill-current {canDecrement ? '' : 'opacity-30'}"
+                class="w-4 h-4 fill-current {canDecrement ? '' : 'opacity-30'}"
                 path={mdiMinus}
             />
         </button>
+        <!-- svelte-ignore a11y-click-events-have-key-events -->
         <button
             use:taphold={onIncrement}
             on:click={(event) => {
@@ -186,19 +186,15 @@
             }}
             aria-disabled={!canIncrement}
             tabindex="-1"
-            class="w-6 flex-none flex justify-center items-center 
+            class="w-6 h-7 flex-none flex justify-center items-center rounded
             {canIncrement
-                ? 'cursor-pointer hover:bg-gray-300/5'
-                : 'cursor-default'}
-            {edit
-                ? 'opacity-100'
-                : 'opacity-0 nohover:opacity-100 group-hover:opacity-100'}
-            transition-opacity"
+                ? 'cursor-pointer hover:bg-brand-100 dark:hover:bg-brand-800/60'
+                : 'cursor-default'}"
         >
             <IconEx
-                class="w-5 h-5 fill-current {canIncrement ? '' : 'opacity-30'}"
+                class="w-4 h-4 fill-current {canIncrement ? '' : 'opacity-30'}"
                 path={mdiPlus}
             />
         </button>
-    </svelte:fragment>
-</InlineEdit>
+    </div>
+</div>

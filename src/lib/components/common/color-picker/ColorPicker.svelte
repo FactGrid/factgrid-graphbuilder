@@ -2,9 +2,6 @@
 	import { useActions, type ActionList } from "svelte-useactions";
 	import ColorPicker from "svelte-awesome-color-picker";
 	import PickerIndicator from "./PickerIndicator.svelte";
-	import PickerWrapper from "./PickerWrapper.svelte";
-	import SliderIndicator from "./SliderIndicator.svelte";
-	import SliderWrapper from "./SliderWrapper.svelte";
 	import Wrapper from "./Wrapper.svelte";
 	import type { HTMLAttributes } from "svelte/elements";
 
@@ -26,21 +23,14 @@
 
 <div use:useActions={use} on:blur bind:this={element} {...$$restProps}>
 	<ColorPicker
-		isPopup={false}
+		isDialog={false}
 		isOpen={true}
-		isInput={false}
 		bind:hex
-		canChangeMode={false}
 		isTextInput={false}
-		toRight={true}
+		sliderDirection="horizontal"
 		components={{
 			wrapper: Wrapper,
-			pickerWrapper: PickerWrapper,
-			sliderWrapper: SliderWrapper,
-			alphaWrapper: SliderWrapper,
 			pickerIndicator: PickerIndicator,
-			sliderIndicator: SliderIndicator,
-			alphaIndicator: SliderIndicator,
 		}}
 	/>
 </div>

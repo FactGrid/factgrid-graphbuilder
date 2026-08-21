@@ -8,6 +8,7 @@ export type ValueItem = {
 	label: LangValue | undefined;
 	description?: LangValue | undefined;
 	language?: string;
+	instanceOf?: string;
 };
 
 export type AutocompleteItem = {

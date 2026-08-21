@@ -9,9 +9,10 @@ export const defaultIterations = 0;
 export const defaultLimit = 0;
 export const defaultMode: AppMode = 'forward';
 export const defaultShortcutsMode: ShortcutsMode = 'preserve';
-export const defaultShortcutsColor = '#000000';
+export const defaultShortcutsColor = '#4a6c93';
 export const defaultShortcutsWidth = 1;
 export const defaultGraphLayout: GraphLayout = 'none';
+export const defaultShowLabels = true;
 
 export const modes: Record<AppMode, string> = {
 	forward: 'Forward',
@@ -65,9 +66,12 @@ export const parseUrlParameters = (parameters: URLSearchParams = new URLSearchPa
 	const sizeProperty = /^P\d+$/.test(parameters.get('size_property') ?? '')
 		? parameters.get('size_property')!
 		: undefined;
+	const unitProperty = /^P\d+$/.test(parameters.get('unit_property') ?? '')
+		? parameters.get('unit_property')!
+		: undefined;
 
 	const queryParameters: QueryParameters = {
-		property, item, language, iterations, limit, mode, wdqs, sizeProperty,
+		property, item, language, iterations, limit, mode, wdqs, sizeProperty, unitProperty,
 	};
 
 	const shortcutsModeRaw = parameters.get('sc') as ShortcutsMode;
@@ -84,11 +88,14 @@ export const parseUrlParameters = (parameters: URLSearchParams = new URLSearchPa
 	const graphLayoutRaw = parameters.get('graph_direction') as GraphLayout;
 	const graphLayout = graphLayouts[graphLayoutRaw] ? graphLayoutRaw : defaultGraphLayout;
 
+	const showLabels = parameters.has('labels') ? parameters.get('labels') !== '0' : defaultShowLabels;
+
 	const visParameters: VisParameters = {
 		shortcutsMode,
 		shortcutsColor,
 		shortcutsWidth,
 		graphDirection: graphLayout,
+		showLabels,
 	};
 
 	return {queryParameters, visParameters};
@@ -129,6 +136,10 @@ export const updateUrl = async (query: QueryParameters, vis: VisParameters, repl
 		parameters.append('size_property', query.sizeProperty);
 	}
 
+	if (query.unitProperty) {
+		parameters.append('unit_property', query.unitProperty);
+	}
+
 	if (vis.shortcutsMode !== defaultShortcutsMode) {
 		parameters.append('sc', vis.shortcutsMode);
 	}
@@ -145,31 +156,32 @@ export const updateUrl = async (query: QueryParameters, vis: VisParameters, repl
 		parameters.append('graph_direction', vis.graphDirection);
 	}
 
+	if (vis.showLabels !== defaultShowLabels) {
+		parameters.append('labels', vis.showLabels ? '1' : '0');
+	}
+
 	await goto('?' + parameters.toString(), {replaceState});
 };
 
 const wdqsLink = function (state: QueryParameters) {
 	const query = '#defaultView:Graph\n' + generateQuery(state)!;
-	return 'https://database.factgrid.de/#' + encodeURIComponent(query);
+	return 'https://database.factgrid.de/query/#' + encodeURIComponent(query);
 };
 
 const listLink = (state: QueryParameters) => {
-	let url = 'https://tools.wmflabs.org/wikidata-todo/tree.html?q=' + (state.item!.slice(1));
+	let url = 'https://www.entitree.com/factgrid';
 
-	if (state.mode === 'reverse' || state.mode === 'both') {
-		url += '&rp=' + (state.property!.slice(1));
+	// Füge die Sprache, die Traversal-Property und das Root-Item hinzu
+	if (state.language) {
+		url += `/${state.language}`; // Aktuelle Sprache hinzufügen
 	}
 
-	if (state.mode === 'forward' || state.mode === 'both') {
-		url += '&p=' + (state.property!.slice(1));
+	if (state.property) {
+		url += `/${state.property}`; // Traversal-Property hinzufügen
 	}
 
-	if (state.iterations !== 0) {
-		url += `&depth=${state.iterations ?? 0}`;
-	}
-
-	if (state.language !== 'en') {
-		url += `&lang=${state.language ?? 'en'}`;
+	if (state.item) {
+		url += `/${state.item}`; // Root-Item hinzufügen
 	}
 
 	return url;
@@ -181,13 +193,13 @@ export const getLinks = (state: QueryParameters) => {
 	}
 
 	const links = [{
-		text: 'Wikidata Query Service',
+		text: 'FactGrid Query Service',
 		link: wdqsLink(state),
 	}];
 
 	if (state.mode === 'forward' || state.mode === 'reverse') {
 		links.push({
-			text: 'Wikidata generic tree',
+			text: 'EntiTree',
 			link: listLink(state),
 		});
 	}

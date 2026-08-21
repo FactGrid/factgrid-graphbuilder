@@ -9,6 +9,7 @@ export type QueryParameters = {
 	mode: AppMode;
 	wdqs: string | undefined;
 	sizeProperty: string | undefined;
+	unitProperty: string | undefined;
 };
 
 export const queryParametersIsValid = (state: QueryParameters) =>
@@ -70,6 +71,18 @@ export const generateQuery = (options: QueryParameters | undefined) => {
 	const out = useGas(options) ? 'PREFIX gas: <http://www.bigdata.com/rdf/gas#>\n\n' : '';
 	const language = options.language === 'en' ? 'en' : (options.language + ',en');
 	const languageService = `SERVICE wikibase:label {bd:serviceParam wikibase:language "${language}" }`;
+
+	if (options.unitProperty) {
+		return out
+        + `\
+  SELECT ?item ?itemLabel ?linkTo ?size {
+    ${genSparqlClause(options)}
+    OPTIONAL { ?item wdt:${options.unitProperty} ?size }
+    OPTIONAL { ?item wdt:${options.property} ?linkTo }
+    ${languageService}
+  }\
+  `;
+	}
 
 	if (options.sizeProperty) {
 		return out

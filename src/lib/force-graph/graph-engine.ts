@@ -3,7 +3,8 @@
 import {ForceEngine} from './force-engine';
 import {ElkEngine} from './elk-engine';
 import {SparqlGraphData} from './graph-data';
-import type {Canvas, CanvasContext, GraphLayout, GraphEngineNotifier, LayoutEngine, LinkObject, NodeObject, Point, SearchObject, ShortcutsMode, VisParameters, GraphNotifier, ElkDirection} from './types';
+import {lightPalette, darkPalette} from './palette';
+import type {Canvas, CanvasContext, GraphLayout, GraphEngineNotifier, LayoutEngine, LinkObject, NodeObject, Point, SearchObject, ShortcutsMode, VisParameters, GraphNotifier, ElkDirection, GraphExportPayload, GraphExportBounds} from './types';
 
 type DragObject = NodeObject & {
 	__initialDragPos?: {x: number; y: number; fx: number | undefined; fy: number | undefined};
@@ -29,16 +30,23 @@ export class GraphEngine implements GraphEngineNotifier {
 
 	private abortController: AbortController | undefined;
 
-	private backgroundColor = '#ffffff';
+	private backgroundColor = lightPalette.backgroundColor;
 
-	private shortcutsColor = '#000000';
+	private shortcutsColor = '#4a6c93';
 	private shortcutsWidth = 1;
-	private linksColor = '#000000';
+	private showLabels = true;
+	private linksColor = lightPalette.linksColor;
 	private linksWidth = 1;
 	private pointOffset = 1;
-	private forwardHighlightColor = '#1e40af50';
-	private reverseHighlightColor = '#ea580c50';
+	private forwardHighlightColor = lightPalette.forwardHighlightColor;
+	private reverseHighlightColor = lightPalette.reverseHighlightColor;
 	private highlightLinksWidth = 5;
+
+	private nodeStrokeColor = lightPalette.nodeStrokeColor;
+	private hoverStrokeColor = lightPalette.hoverStrokeColor;
+	private hoverFillColor = lightPalette.hoverFillColor;
+	private textStrokeColor = lightPalette.textStrokeColor;
+	private textFillColor = lightPalette.textFillColor;
 
 	private forwardNodes = new Set<NodeObject>();
 	private forwardLinks = new Set<LinkObject>();
@@ -64,10 +72,10 @@ export class GraphEngine implements GraphEngineNotifier {
 	private hoverNode: NodeObject | undefined = undefined;
 	private nodeLineWidth = 2;
 
-	private pointFill = '#9ca3af';
-	private blockFill = '#e5e7eb';
-	private rootNodePointFill = '#dc2626';
-	private rootNodeBlockFill = '#ef4444';
+	private pointFill = lightPalette.pointFill;
+	private blockFill = lightPalette.blockFill;
+	private rootNodePointFill = lightPalette.rootNodePointFill;
+	private rootNodeBlockFill = lightPalette.rootNodeBlockFill;
 
 	constructor(canvas: Canvas, visParameters: VisParameters, private readonly graphNotifier: GraphNotifier) {
 		this.setVisParameters(visParameters);
@@ -107,13 +115,94 @@ export class GraphEngine implements GraphEngineNotifier {
 		this.graphNotifier.onLayoutComplete(x, y, width, height);
 	}
 
+	// The force-directed layout keeps ticking (and moving nodes) for up to 15s after load
+	// (see ForceEngine's cooldownTime), so `lastBounds` — captured once right after the initial
+	// warmup ticks in onLayoutComplete — goes stale and can crop the export. Recomputing the
+	// bounds from the nodes' current positions at export time keeps it correct for both layouts.
+	private computeExportBounds(isPointShape: boolean, showLabels: boolean): GraphExportBounds {
+		const nodes = this.graphData.nodes;
+		if (nodes.length === 0) {
+			return {x: 0, y: 0, width: 100, height: 100};
+		}
+
+		const padding = 10;
+		let minX = Number.POSITIVE_INFINITY;
+		let minY = Number.POSITIVE_INFINITY;
+		let maxX = Number.NEGATIVE_INFINITY;
+		let maxY = Number.NEGATIVE_INFINITY;
+
+		for (const node of nodes) {
+			const x = node.x!;
+			const y = node.y!;
+
+			if (isPointShape) {
+				const labelWidth = showLabels ? this.pointOffset + node.textWidth : 0;
+				const halfTextHeight = showLabels ? node.textHeight / 2 : 0;
+				minX = Math.min(minX, x - node.radius);
+				maxX = Math.max(maxX, x + node.radius + labelWidth);
+				minY = Math.min(minY, y - Math.max(node.radius, halfTextHeight));
+				maxY = Math.max(maxY, y + Math.max(node.radius, halfTextHeight));
+			} else {
+				minX = Math.min(minX, x);
+				maxX = Math.max(maxX, x + node.textWidth + 10);
+				minY = Math.min(minY, y);
+				maxY = Math.max(maxY, y + node.textHeight + 10);
+			}
+		}
+
+		return {
+			x: minX - padding,
+			y: minY - padding,
+			width: (maxX - minX) + (2 * padding),
+			height: (maxY - minY) + (2 * padding),
+		};
+	}
+
+	public exportGraph(requestId: string) {
+		const isPointShape = this.graphData.nodes[0]?.shape === 'point';
+		const rootNode = this.graphData.rootNode;
+		const showLabels = !isPointShape || this.showLabels;
+
+		const payload: GraphExportPayload = {
+			bounds: this.computeExportBounds(isPointShape, showLabels),
+			isPointShape,
+			shortcutsColor: this.shortcutsColor,
+			shortcutsWidth: this.shortcutsWidth,
+			showLabels,
+			nodes: this.graphData.nodes.map(node => ({
+				x: node.x!,
+				y: node.y!,
+				radius: node.radius,
+				textWidth: node.textWidth,
+				textHeight: node.textHeight,
+				label: node.label,
+				isRoot: node === rootNode,
+			})),
+			links: this.graphData.viewLinks.map(link => ({
+				sections: link.sections,
+				source: {x: link.source.x!, y: link.source.y!, radius: link.source.radius},
+				target: {x: link.target.x!, y: link.target.y!, radius: link.target.radius},
+				isShortcut: link.isShortcut,
+			})),
+		};
+
+		this.graphNotifier.onGraphExportReady(requestId, payload);
+	}
+
 	public setVisParameters(visParameters: VisParameters) {
 		this.setLayoutOptions(visParameters.graphDirection);
 
 		this.shortcutsMode = visParameters.shortcutsMode;
 		this.shortcutsWidth = visParameters.shortcutsWidth;
 		this.shortcutsColor = visParameters.shortcutsColor;
+		this.showLabels = visParameters.showLabels;
 
+		this.needsRedraw = true;
+	}
+
+	public setTheme(theme: 'light' | 'dark') {
+		const palette = theme === 'dark' ? darkPalette : lightPalette;
+		Object.assign(this, palette);
 		this.needsRedraw = true;
 	}
 
@@ -331,9 +420,11 @@ export class GraphEngine implements GraphEngineNotifier {
 
 		if (this.shortcutsColor === this.linksColor && this.shortcutsWidth === this.linksWidth) {
 			const arrowsFilter = this.shortcutsWidth === 0 ? ((link: LinkObject) => !link.isShortcut) : undefined;
+			ctx.fillStyle = this.linksColor;
 			drawArrows(links, arrowsSize, ctx, arrowsFilter);
 		} else {
 			ctx.strokeStyle = this.linksColor;
+			ctx.fillStyle = this.linksColor;
 			drawArrows(links, arrowsSize, ctx, link => !link.isShortcut);
 
 			if (this.shortcutsWidth !== 0) {
@@ -345,14 +436,14 @@ export class GraphEngine implements GraphEngineNotifier {
 		// Draw nodes
 		const nodes = this.graphData.nodes as DrawNode[];
 
-		ctx.strokeStyle = '#000000';
+		ctx.strokeStyle = this.nodeStrokeColor;
 		ctx.lineWidth = this.nodeLineWidth;
 		ctx.fillStyle = isPoint ? this.pointFill : this.blockFill;
 		drawNodes(nodes, ctx);
 
 		const rootNode = this.graphData.rootNode as DrawNode;
 		if (rootNode) {
-			ctx.strokeStyle = '#000000';
+			ctx.strokeStyle = this.nodeStrokeColor;
 			ctx.lineWidth = this.nodeLineWidth;
 			ctx.fillStyle = isPoint ? this.rootNodePointFill : this.rootNodeBlockFill;
 			drawNodes([rootNode], ctx);
@@ -373,28 +464,32 @@ export class GraphEngine implements GraphEngineNotifier {
 		}
 
 		if (this.hoverNode) {
-			ctx.strokeStyle = '#40404050';
+			ctx.strokeStyle = this.hoverStrokeColor;
 			ctx.lineWidth = 5;
-			ctx.fillStyle = '#40404050';
+			ctx.fillStyle = this.hoverFillColor;
 			drawNodes([this.hoverNode as DrawNode], ctx);
 		}
 
-		ctx.beginPath();
-		ctx.font = '10px ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji"';
-		ctx.textAlign = 'left';
-		ctx.textBaseline = isPoint ? 'middle' : 'hanging';
-		ctx.lineWidth = 1;
-		ctx.strokeStyle = '#ffffff';
-		ctx.fillStyle = '#000000';
+		// The "show labels" toggle only applies to the force-directed (point-shape) layout —
+		// hierarchical (block-shape) layouts always show labels, since the text is the node itself.
+		if (!isPoint || this.showLabels) {
+			ctx.beginPath();
+			ctx.font = '10px ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji"';
+			ctx.textAlign = 'left';
+			ctx.textBaseline = isPoint ? 'middle' : 'hanging';
+			ctx.lineWidth = 1;
+			ctx.strokeStyle = this.textStrokeColor;
+			ctx.fillStyle = this.textFillColor;
 
-		for (const node of nodes) {
-			const x = isPoint ? node.x + node.radius + this.pointOffset : node.x + 5;
-			const y = isPoint ? node.y : node.y + 5;
-			if (isPoint) {
-				ctx.strokeText(node.label, x, y);
+			for (const node of nodes) {
+				const x = isPoint ? node.x + node.radius + this.pointOffset : node.x + 5;
+				const y = isPoint ? node.y : node.y + 5;
+				if (isPoint) {
+					ctx.strokeText(node.label, x, y);
+				}
+
+				ctx.fillText(node.label, x, y);
 			}
-
-			ctx.fillText(node.label, x, y);
 		}
 	}
 

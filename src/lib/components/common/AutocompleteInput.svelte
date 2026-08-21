@@ -1,9 +1,8 @@
 <script lang="ts">
     import IntersectionObserver from "svelte-intersection-observer";
-    import InlineEdit from "$lib/components/common/InlineEdit.svelte";
+    import { Input } from "$lib/components/ui/input/index.js";
+    import * as Popover from "$lib/components/ui/popover/index.js";
     import AutocompleteItemBlock from "./AutocompleteItemBlock.svelte";
-    import Skeleton from "$lib/components/common/Skeleton.svelte";
-    import DropdownList from "$lib/components/common/DropdownList.svelte";
     import { tick } from "svelte";
     import type {
         AutocompleteFunction,
@@ -12,7 +11,6 @@
         ResolveFunction,
         ValueItem,
     } from "./autocomplete-input";
-    import Dropdown from "./Dropdown.svelte";
 
     let cls = "";
     export { cls as class };
@@ -26,14 +24,15 @@
     export let resolve: ResolveFunction;
     export let language: string | undefined = undefined;
 
+    let inputRef: HTMLInputElement | null = null;
     let loadMoreAreaRef: HTMLDivElement;
-    let dropdownRef: DropdownList;
+    let listRef: HTMLDivElement | null = null;
     let loadMoreAreaVisible = false;
     let fieldValue: string | undefined;
 
     let autocompleteItems: AutocompleteItem[] | undefined;
     let loadMore: LoadMoreFunction;
-    let edit = false;
+    let open = false;
 
     let abortController: AbortController | undefined;
     let resolveAbortController: AbortController | undefined;
@@ -91,16 +90,26 @@
     };
 
     $: updateFieldValue(valueObject);
-    $: !edit && abort();
 
     const acceptItem = (newValue: ValueItem | undefined) => {
         abort();
         autocompleteItems = loadMore = undefined;
+        open = false;
         if (valueObject?.id !== newValue?.id) {
             value = newValue?.id;
             valueObject = newValue;
         }
-        edit = false;
+    };
+
+    const onBlur = () => {
+        abort();
+        if (!fieldValue) {
+            acceptItem(undefined);
+        }
+        updateFieldValue(valueObject);
+        autocompleteItems = undefined;
+        loadMore = undefined;
+        open = false;
     };
 
     const onKeyDown = (event: KeyboardEvent) => {
@@ -154,7 +163,7 @@
         if (event.key === "Escape") {
             event.stopPropagation();
             event.preventDefault();
-            edit = false;
+            onBlur();
             return;
         }
     };
@@ -164,6 +173,7 @@
 
         if (!fieldValue) {
             autocompleteItems = loadMore = undefined;
+            open = false;
             return;
         }
 
@@ -174,6 +184,7 @@
                 abortController.signal
             ));
             activeAutocompleteItem = 0;
+            open = true;
         } catch (error_: unknown) {
             if ((error_ as Error).name !== "AbortError") {
                 throw error_;
@@ -182,16 +193,6 @@
         } finally {
             abortController = undefined;
         }
-    };
-
-    const onBlur = () => {
-        abort();
-        if (!fieldValue) {
-            acceptItem(undefined);
-        }
-        updateFieldValue(valueObject);
-        autocompleteItems = undefined;
-        loadMore = undefined;
     };
 
     const onLoadMore = async () => {
@@ -226,65 +227,49 @@
             (item) => !existingItems.has(item.value.id)
         );
 
-        const originalScroll = dropdownRef.getScrollTop();
+        const originalScroll = listRef?.scrollTop ?? 0;
         autocompleteItems = [...autocompleteItems!, ...newAutocompleteItems];
         await tick();
-        dropdownRef.setScrollTop(originalScroll);
-
-        // await new Promise((resolve) => {
-        //     setTimeout(() => {
-        //         resolve(undefined);
-        //     }, 100);
-        // });
-
-        // if (loadMoreAreaVisible) {
-        //     onLoadMore();
-        // }
+        if (listRef) {
+            listRef.scrollTop = originalScroll;
+        }
     };
 </script>
 
-<Dropdown dropdownVisible={autocompleteItems !== undefined}>
-    <InlineEdit
-        slot="trigger"
-        let:floatingRef
-        use={[[floatingRef]]}
-        {id}
-        bind:value={fieldValue}
-        bind:edit
-        on:keydown={onKeyDown}
-        on:input={onInput}
-        on:blur={onBlur}
-        class={cls}
-        ignoreKeyboardEvents={true}
-        spellcheck="false"
-        aria-haspopup="true"
-        autocapitalize="none"
-        autocomplete="off"
-        autocorrect="off"
-        role="combobox"
-        aria-expanded={autocompleteItems !== undefined && edit}
-        aria-controls="listbox-{id}"
-        aria-activedescendant={autocompleteItems
-            ? `option-${id}-${activeAutocompleteItem}`
-            : undefined}
-        aria-autocomplete="list"
-    >
-        {#if valueObject !== undefined}
-            <slot name="value">{labelFn(valueObject)}</slot>
-        {:else if value === undefined}
-            <span class="italic text-white/40">{placeholder}</span>
-        {:else}
-            <Skeleton
-                class="bg-blue-500/70 {['w-16', 'w-20', 'w-24', 'w-28', 'w-32'][
-                    Math.floor(Math.random() * 5)
-                ]}"
-            />
-        {/if}
-    </InlineEdit>
+<Popover.Root bind:open>
+    <div class="relative flex items-center gap-1">
+        <Input
+            bind:ref={inputRef}
+            {id}
+            bind:value={fieldValue}
+            onkeydown={onKeyDown}
+            oninput={onInput}
+            onblur={onBlur}
+            class={cls}
+            {placeholder}
+            spellcheck="false"
+            aria-haspopup="listbox"
+            autocapitalize="none"
+            autocomplete="off"
+            {...{ autocorrect: "off" }}
+            role="combobox"
+            aria-expanded={open}
+            aria-controls="listbox-{id}"
+            aria-activedescendant={autocompleteItems
+                ? `option-${id}-${activeAutocompleteItem}`
+                : undefined}
+            aria-autocomplete="list"
+        />
+        <slot name="action" />
+    </div>
 
-    <DropdownList
-        slot="dropdown"
-        bind:this={dropdownRef}
+    <Popover.Content
+        customAnchor={inputRef}
+        onOpenAutoFocus={(event) => event.preventDefault()}
+        align="start"
+        class="w-[max(var(--bits-floating-anchor-width),20rem)] max-w-[calc(100vw-2rem)] max-h-[400px] overflow-auto p-1
+        scrollbar-thin scrollbar-track-transparent scrollbar-thumb-brand-300 dark:scrollbar-thumb-brand-700"
+        bind:ref={listRef}
         id="listbox-{id}"
         role="listbox"
         aria-labelledby="label-{id}"
@@ -294,7 +279,7 @@
                 <IntersectionObserver
                     element={loadMoreAreaRef}
                     bind:intersecting={loadMoreAreaVisible}
-                    on:intersect={onLoadMore}
+                    onintersect={onLoadMore}
                 >
                     <div
                         bind:this={loadMoreAreaRef}
@@ -317,7 +302,7 @@
                 {/each}
             </div>
         {:else}
-            <div class="text-white">No items found</div>
+            <div class="text-brand-500 dark:text-brand-400 px-2 py-1">No items found</div>
         {/if}
-    </DropdownList>
-</Dropdown>
+    </Popover.Content>
+</Popover.Root>

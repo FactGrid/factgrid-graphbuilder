@@ -5,15 +5,36 @@
     import QueryForm from "./QueryForm.svelte";
     import Graph from "$lib/force-graph/Graph.svelte";
     import About from "./About.svelte";
-    import { mdiMenu } from "@mdi/js";
+    import { mdiDownload, mdiMenuDown } from "@mdi/js";
     import IconEx from "$lib/components/common/IconEx.svelte";
+    import Logo from "$lib/components/common/Logo.svelte";
+    import ThemeToggle from "$lib/components/common/ThemeToggle.svelte";
+    import Heading2 from "$lib/components/common/Heading2.svelte";
+    import { Button } from "$lib/components/ui/button/index.js";
+    import * as DropdownMenu from "$lib/components/ui/dropdown-menu/index.js";
+    import EditorSettingsPanel from "./EditorSettingsPanel.svelte";
     import isEqual from "lodash.isequal";
-    import ViewForm from "./ViewForm.svelte";
     import type { VisParameters } from "$lib/force-graph/types";
 
-    let query: string | undefined = undefined;
+    let graphComponent: Graph;
+    let exporting = false;
 
-    let drawerVisible = false;
+    const onExport = async (format: "svg" | "pdf") => {
+        if (!graphComponent || exporting) {
+            return;
+        }
+
+        exporting = true;
+        try {
+            await graphComponent.exportGraph(format);
+        } catch (error) {
+            console.error("Graph export failed", error);
+        } finally {
+            exporting = false;
+        }
+    };
+
+    let query: string | undefined = undefined;
 
     let appParameters: AppParameters = parseUrlParameters();
 
@@ -36,7 +57,6 @@
     const rootPage = $page.url.origin + $page.url.pathname;
 
     const onQueryFormSubmit = async (event: CustomEvent<QueryParameters>) => {
-        drawerVisible = false;
         await updateUrl(event.detail, appParameters.visParameters, false);
     };
 
@@ -46,63 +66,79 @@
 </script>
 
 <svelte:head>
-    <title>Wikidata Graph Builder</title>
+    <title>FactGrid Graph Builder</title>
 </svelte:head>
 
-<div class="h-screen max-h-screen md:flex">
-    <button
-        class="absolute top-6 left-0 bg-gray-800/90 w-16 h-16 md:hidden 
-        flex items-center justify-center rounded-r-lg z-10
-        {drawerVisible ? 'hidden' : ''}"
-        on:click={() => {
-            drawerVisible = !drawerVisible;
-        }}
-    >
-        <IconEx path={mdiMenu} class="w-12 h-12 fill-white/80" />
-    </button>
+{#if query}
+    <div class="relative h-screen max-h-screen w-full bg-white dark:bg-brand-950">
+        <Graph
+            bind:this={graphComponent}
+            {query}
+            rootNode={appParameters.queryParameters.item}
+            visParameters={appParameters.visParameters}
+        />
 
-    <!-- svelte-ignore a11y-click-events-have-key-events -->
-    <div
-        class="absolute inset-0 bg-gray-900/80 md:hidden z-10
-        {drawerVisible ? '' : 'hidden'}"
-        on:click={() => {
-            drawerVisible = false;
-        }}
-    />
-
-    <div
-        class="w-72 flex-none shadow-lg bg-gray-800/90 md:bg-gray-800 overflow-y-auto absolute left-0 top-0 bottom-0 md:static
-        {drawerVisible
-            ? 'translate-x-0 shadow-gray-900'
-            : 'transition-transform -translate-x-full'}
-        md:transform-none transition-transform md:shadow-gray-900 z-10 md:z-auto
-        "
-    >
-        <a
-            href={rootPage}
-            class="block bg-indigo-700 text-indigo-100 text-xl p-3"
+        <div
+            class="absolute top-4 left-4 flex flex-col items-start gap-3 max-w-[calc(100vw-2rem)]"
         >
-            Wikidata Graph Builder
-        </a>
+            <Logo href={rootPage} class="drop-shadow-sm" />
+            <EditorSettingsPanel
+                {appParameters}
+                {visParameters}
+                on:querysubmit={onQueryFormSubmit}
+                on:vissubmit={onViewFormSubmit}
+            />
+        </div>
 
-        <div class="px-2 py-2">
-            <QueryForm {appParameters} on:submit={onQueryFormSubmit} />
+        <div class="absolute top-4 right-4">
+            <ThemeToggle />
+        </div>
+
+        <div class="absolute bottom-4 left-4">
+            <DropdownMenu.Root>
+                <DropdownMenu.Trigger disabled={exporting}>
+                    {#snippet child({ props })}
+                        <Button
+                            {...props}
+                            variant="outline"
+                            disabled={exporting}
+                            class="flex items-center gap-2"
+                        >
+                            <IconEx path={mdiDownload} class="w-4 h-4 fill-current" />
+                            {exporting ? "Downloading…" : "Download"}
+                            <IconEx
+                                path={mdiMenuDown}
+                                class="fill-current h-4 w-4"
+                                role="presentation"
+                            />
+                        </Button>
+                    {/snippet}
+                </DropdownMenu.Trigger>
+                <DropdownMenu.Content align="start">
+                    <DropdownMenu.Item onclick={() => onExport("svg")}>
+                        Download as SVG
+                    </DropdownMenu.Item>
+                    <DropdownMenu.Item onclick={() => onExport("pdf")}>
+                        Download as PDF
+                    </DropdownMenu.Item>
+                </DropdownMenu.Content>
+            </DropdownMenu.Root>
         </div>
     </div>
-    <div class="md:grow overflow-auto relative h-full">
-        {#if query}
-            <Graph
-                {query}
-                rootNode={appParameters.queryParameters.item}
-                visParameters={appParameters.visParameters}
-            />
-            <ViewForm {visParameters} on:submit={onViewFormSubmit} />
-        {:else}
-            <div class="grow overflow-y-auto flex items-center h-screen">
-                <div class="max-w-xl mx-auto w-auto p-4">
-                    <About />
-                </div>
+{:else}
+    <div class="min-h-screen w-full bg-white dark:bg-brand-950 px-6 py-10 md:px-20 md:py-16">
+        <div class="flex items-center justify-between max-w-7xl mx-auto mb-16">
+            <Logo href={rootPage} />
+            <ThemeToggle />
+        </div>
+
+        <div class="grid md:grid-cols-2 gap-x-20 gap-y-12 max-w-7xl mx-auto">
+            <About />
+
+            <div>
+                <Heading2 class="mt-0 text-2xl font-semibold mb-4">Start over</Heading2>
+                <QueryForm {appParameters} on:submit={onQueryFormSubmit} />
             </div>
-        {/if}
+        </div>
     </div>
-</div>
+{/if}

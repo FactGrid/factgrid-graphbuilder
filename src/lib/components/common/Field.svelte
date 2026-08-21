@@ -1,6 +1,7 @@
 <script lang="ts">
     import { setContext } from "svelte";
     import { makeid } from "./utils";
+    import { Label } from "$lib/components/ui/label/index.js";
 
     export const id: string = makeid(10);
     export let label: string;
@@ -20,14 +21,13 @@
 </script>
 
 <div class={cls}>
-    <!-- svelte-ignore a11y-click-events-have-key-events -->
-    <label
+    <Label
         for={id}
-        class="px-1 border-transparent border-[1.99px] text-sm text-white/50 mb-0.5 font-bold"
-        on:mousedown={onMousedown}
         id="label-{id}"
+        onmousedown={onMousedown}
+        class="block mb-1.5 text-brand-900 dark:text-brand-50 font-bold"
     >
         {label}
-    </label>
+    </Label>
     <slot />
 </div>

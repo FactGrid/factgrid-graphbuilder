@@ -1,124 +1,113 @@
 <script lang="ts">
+    import { mdiArrowTopRightThin } from "@mdi/js";
+    import IconEx from "$lib/components/common/IconEx.svelte";
+
     const link = (params: Record<string, string>) =>
         "?" + new URLSearchParams(params).toString();
 
     const examples = {
-        "Parent taxons of Blue Whale (force-based)": {
-            item: "Q42196",
-            property: "P171",
-            sc_color: "#0000003c",
+        "State-organization Duchy Saxe-Gotha-Altenburg (organisation chart)": {
+            item: "Q40154",
+            property: "P428",
+            mode: "reverse",
+            graph_direction: "left",
+            lang: "de",
         },
-        "Class tree for human (directed)": {
-            item: "Q5",
-            property: "P279",
+        "State-organization Duchy Saxe-Gotha-Altenburg with number of employees": {
+            item: "Q40154",
+            property: "P428",
+            mode: "reverse",
+            size_property: "P315",
+            lang: "de",
+        },
+        "Pedigree of Duke Ernst II of Saxe-Gotha-Altenburg": {
+            item: "Q978",
+            property: "P150",
+            mode: "reverse",
             graph_direction: "down",
         },
-        "Parents of Nikita Mikhalkov (directed)": {
-            item: "Q55207",
-            property: "P40",
-            mode: "reverse",
-            iterations: "20",
-            graph_direction: "down",
-        },
-        "Children of Agnes of the Palatinate (force-based, 4 generations)": {
-            property: "P40",
-            item: "Q4450926",
-            iterations: "4",
-        },
-        "Types of integers (force-based, counting instances of each type)": {
-            property: "P279",
-            item: "Q12503",
-            mode: "reverse",
-            size_property: "P31",
-        },
-        "Subclasses of physicists (force-based, counting people by occupation)":
-            {
-                property: "P279",
-                item: "Q169470",
-                mode: "reverse",
-                size_property: "P106",
-            },
-        "Subclasses and parent classes of nonmetals (force-based)": {
-            property: "P279",
-            item: "Q19600",
+        "Continuing font grades from Cicero, sized by point value": {
+            item: "Q1194171",
+            property: "P6",
             mode: "both",
+            unit_property: "P834",
+            lang: "de",
         },
-        "People, who were filmed with Jim Carrey": {
-            property: "P161",
-            item: "Q40504",
-            mode: "undirected",
-            iterations: "2",
+        "OhdABTaxonomy of Speculoos baker": {
+            property: "P1007",
+            item: "Q673131",
+            graph_direction: "up",
         },
-        "All-directional family tree of William Shakespeare": {
-            property: "P40",
-            item: "Q692",
-            mode: "undirected",
-            iterations: "4",
-            graph_direction: "down",
-        },
-        "Is Jesus a descendant of Adam of the 53rd tribe?": {
-            property: "P40",
-            item: "Q70899",
-            iterations: "60",
-            graph_direction: "down",
-        },
-        "Force-directed graph drawing is surely an entity": {
-            property: "P279",
-            item: "Q3076841",
-            graph_direction: "down",
-        },
-        "Connectivity of the USA states (custom query)": {
-            mode: "wdqs",
-            wdqs: `\
-SELECT ?item ?itemLabel ?linkTo {
-?item wdt:P31 wd:Q35657 .
-OPTIONAL { ?linkTo wdt:P47 ?item ; wdt:P31 wd:Q35657 } .
-
-SERVICE wikibase:label {bd:serviceParam wikibase:language "en" }
-}`,
-        },
-        "Usage of subclasses of actors": {
-            property: "P279",
-            item: "Q33999",
+        "Types of baker in OhdAB": {
+            property: "P1007",
+            item: "Q520368",
             mode: "reverse",
-            size_property: "P106",
-        },
+            iterations: "1",
+            graph_direction: "right",
+        }, 
     };
 </script>
 
-<h1 class="text-3xl md:text-4xl my-8">Wikidata Graph Builder</h1>
-<p>
-    Build graphs using
-    <a href="https://www.wikidata.org">Wikidata </a>
-    <a href="https://query.wikidata.org/">Query Service</a>.
-</p>
-<p>Examples:</p>
-<ul>
-    {#each Object.entries(examples) as [name, params]}
-        <li>
-            <a href={link(params)}>
-                {name}
-            </a>
-        </li>
-    {/each}
-</ul>
-<p class="text-sm">
-    The source code released under
-    <a href="https://opensource.org/licenses/MIT">MIT license </a>
-    at
-    <a href="https://github.com/AngryLoki/wikidata-tree-builder"> GitHub </a>.
-</p>
+<div>
+    <h2 class="text-2xl font-semibold mb-3">Tool description</h2>
+    <p class="leading-relaxed">
+        Create hierarchical visualisations directly from FactGrid. Data
+        entered is retrieved in real time via the
+        <a href="https://database.factgrid.de/wiki/Main_Page">FactGrid</a>
+        <a href="https://database.factgrid.de/query/">Query Service</a>.
+        Use directed graphs, for example, for family trees, organisation
+        charts or taxonomies.
+    </p>
+
+    <h2 class="text-2xl font-semibold mt-12 mb-3">Examples</h2>
+    <ul>
+        {#each Object.entries(examples) as [name, params]}
+            <li>
+                <a href={link(params)} class="example-link">
+                    <span>{name}</span>
+                    <IconEx
+                        path={mdiArrowTopRightThin}
+                        class="inline w-3.5 h-3.5 align-text-top fill-current no-underline"
+                    />
+                </a>
+            </li>
+        {/each}
+    </ul>
+    <p class="text-sm mt-8">
+        The source code is released under
+        <a href="https://opensource.org/licenses/MIT">MIT license </a>
+        at
+        <a href="https://github.com/vonMitzscha/wikidata-graph-builder">
+            GitHub</a
+        >.
+        Designed, adapted and expanded by vonMitzscha for FactGrid.
+    </p>
+</div>
 
 <style lang="postcss">
+    @reference '../app.css';
+
     a {
-        @apply text-blue-600 hover:underline;
+        @apply text-brand-800 dark:text-brand-200 underline decoration-brand-300 dark:decoration-brand-600 underline-offset-2 hover:decoration-brand-500 dark:hover:decoration-brand-400;
+    }
+
+    a.example-link {
+        @apply no-underline;
+    }
+
+    a.example-link span {
+        @apply underline decoration-brand-300 dark:decoration-brand-600 underline-offset-2;
     }
 
     p {
-        @apply mb-3 text-gray-800;
+        @apply mb-3 text-brand-700 dark:text-brand-300;
     }
 
     ul {
         @apply ml-4 mb-3 list-disc list-inside;
+    }
+
+    li {
+        @apply mb-2;
     }
 </style>
