@@ -1,10 +1,5 @@
 <script lang="ts">
-	export let pos: { x: number; y: number };
-	export let hex: string;
-	export let isDark: boolean;
-
-	hex;
-	isDark;
+	let { pos }: { pos: { x: number; y: number } } = $props();
 </script>
 
 <div

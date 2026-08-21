@@ -117,13 +117,13 @@
 <output
     role="button"
     use:useActions={use}
-    class="flex items-stretch w-full transition-all rounded-sm border-[1.99px] cursor-text
-    text-gray-200 selection:text-gray-200 selection:bg-blue-600/60
-    {edit
-        ? 'bg-gray-950 focus-within:bg-black hover:focus-within:bg-black ' +
-          (invalid ? 'border-red-500' : 'border-gray-300/5')
-        : 'bg-transparent hover:bg-gray-300/5 border-transparent hover:border-gray-300/5 nohover:bg-gray-400/5'}
-    focus-within:border-blue-500 hover:focus-within:border-blue-500
+    class="flex items-center h-9 w-full transition-colors rounded-md border cursor-text px-3 py-2
+    text-sm text-brand-900 dark:text-brand-100 selection:text-white selection:bg-brand-400/70
+    bg-white dark:bg-brand-900
+    {invalid
+        ? 'border-red-500'
+        : 'border-brand-300 dark:border-brand-600 hover:border-brand-400 dark:hover:border-brand-500'}
+    focus-within:border-brand-500 focus-within:ring-2 focus-within:ring-brand-500/15
     {cls}"
     on:click={enterEditMode}
     on:keydown={enterEditMode}
@@ -135,8 +135,7 @@
     {#if edit}
         <MultilineField
             bind:this={editRef}
-            class="grow min-h-[1.5rem] pl-1 pr-4
-            {invalid ? 'pr-0' : ''} 
+            class="grow min-h-[1.25rem]
             border-none w-full focus:outline-none focus:ring-0 bg-transparent"
             {...$$restProps}
             on:keydown={onKeydown}
@@ -158,10 +157,10 @@
         {/if}
     {:else}
         <div
-            class="min-h-[1.5rem] pl-1 h-full break-words [word-break:break-word] whitespace-pre-wrap"
+            class="min-h-[1.25rem] h-full break-words [word-break:break-word] whitespace-pre-wrap"
         >
             {#if !value}
-                <span class="italic text-white/50">
+                <span class="italic text-brand-400 dark:text-brand-500">
                     {placeholder}
                 </span>
             {:else}

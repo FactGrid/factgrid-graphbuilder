@@ -8,13 +8,12 @@
     } from "./app";
     import NumberInput from "$lib/components/common/NumberInput.svelte";
     import Select from "$lib/components/common/Select.svelte";
-    import Button from "$lib/components/common/Button.svelte";
+    import { Button } from "$lib/components/ui/button/index.js";
     import Field from "$lib/components/common/Field.svelte";
     import ItemEdit from "$lib/components/wikidata/ItemEdit.svelte";
-    import ButtonsBox from "$lib/components/common/ButtonsBox.svelte";
     import LanguageEdit from "$lib/components/wikidata/LanguageEdit.svelte";
     import type { ValueItem } from "$lib/components/common/autocomplete-input";
-    import InlineEdit from "$lib/components/common/InlineEdit.svelte";
+    import { Textarea } from "$lib/components/ui/textarea/index.js";
     import DropdownMenu from "$lib/components/common/DropdownMenu.svelte";
     import { createEventDispatcher } from "svelte";
 
@@ -37,6 +36,15 @@
     let wdqs: string | undefined;
     let sizeProperty: string | undefined;
     let sizePropertyObject: ValueItem | undefined;
+    let unitProperty: string | undefined;
+    let unitPropertyObject: ValueItem | undefined;
+    let sizeMode: "none" | "size" | "unit" = "none";
+
+    const sizeModeOptions: Record<string, string> = {
+        none: "None",
+        size: "Size property",
+        unit: "Unit property",
+    };
 
     const dispatch = createEventDispatcher();
 
@@ -52,7 +60,10 @@
             mode,
             wdqs,
             sizeProperty,
+            unitProperty,
         } = appParameters.queryParameters);
+
+        sizeMode = unitProperty ? "unit" : sizeProperty ? "size" : "none";
 
         // https://github.com/sveltejs/svelte/issues/4470
         // await tick();
@@ -68,18 +79,32 @@
         mode,
         wdqs,
         sizeProperty: sizePropertyObject?.id,
+        unitProperty: unitPropertyObject?.id,
     } as QueryParameters;
 
     $: isValid = queryParametersIsValid(formQueryParameters);
     $: tools = getLinks(formQueryParameters);
+    $: isForceDirected = appParameters.visParameters.graphDirection === "none";
 
     const onSubmit = () => {
         dispatch("submit", formQueryParameters);
     };
+
+    const onSizeModeChange = () => {
+        if (sizeMode !== "size") {
+            sizeProperty = undefined;
+            sizePropertyObject = undefined;
+        }
+
+        if (sizeMode !== "unit") {
+            unitProperty = undefined;
+            unitPropertyObject = undefined;
+        }
+    };
 </script>
 
-<div class="space-y-2">
-    <div class="flex gap-2">
+<div class="space-y-5">
+    <div class="flex gap-4">
         <Field class="w-[calc(50%-0.25rem)] box-border" label="Mode">
             <Select bind:value={mode} options={modes} />
         </Field>
@@ -91,11 +116,7 @@
 
     {#if mode === "wdqs"}
         <Field label="SPARQL query">
-            <InlineEdit
-                bind:value={wdqs}
-                multiline={true}
-                class="min-h-[8rem] font-mono text-sm"
-            />
+            <Textarea bind:value={wdqs} class="min-h-32 font-mono text-sm" />
         </Field>
     {:else}
         <Field label="Traversal property">
@@ -126,29 +147,47 @@
             />
         </Field>
 
-        <Field label="Size property">
-            <ItemEdit
-                bind:value={sizeProperty}
-                bind:valueObject={sizePropertyObject}
-                type="property"
-                {language}
-            />
-        </Field>
+        {#if isForceDirected}
+            <Field label="Node size based on">
+                <Select
+                    options={sizeModeOptions}
+                    bind:value={sizeMode}
+                    on:change={onSizeModeChange}
+                />
+            </Field>
+
+            {#if sizeMode === "size"}
+                <Field label="Size property">
+                    <ItemEdit
+                        bind:value={sizeProperty}
+                        bind:valueObject={sizePropertyObject}
+                        type="property"
+                        {language}
+                    />
+                </Field>
+            {:else if sizeMode === "unit"}
+                <Field label="Unit property">
+                    <ItemEdit
+                        bind:value={unitProperty}
+                        bind:valueObject={unitPropertyObject}
+                        type="property"
+                        datatype="quantity"
+                        {language}
+                    />
+                </Field>
+            {/if}
+        {/if}
     {/if}
 
-    <ButtonsBox class="flex gap-2 pt-2">
+    <div class="flex gap-4 pt-2">
         <Button
-            on:click={onSubmit}
+            onclick={onSubmit}
             disabled={!isValid}
-            class="w-[calc(50%-0.25rem)]"
-            primary
+            class="flex-1"
+            variant="cta"
         >
             Build
         </Button>
-        <DropdownMenu
-            class="w-[calc(50%-0.25rem)]"
-            title="Tools"
-            links={tools}
-        />
-    </ButtonsBox>
+        <DropdownMenu class="flex-1" title="Tools" links={tools} />
+    </div>
 </div>

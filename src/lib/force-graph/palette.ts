@@ -1,0 +1,31 @@
+export const lightPalette = {
+	backgroundColor: '#ffffff',
+	linksColor: '#4a6c93',
+	pointFill: '#9daec4',
+	blockFill: '#dce3eb',
+	rootNodePointFill: '#f5820a',
+	rootNodeBlockFill: '#fbcb98',
+	nodeStrokeColor: '#0b0f17',
+	hoverStrokeColor: '#4a6c9350',
+	hoverFillColor: '#4a6c9350',
+	textStrokeColor: '#ffffff',
+	textFillColor: '#0b0f17',
+	forwardHighlightColor: '#1c7df250',
+	reverseHighlightColor: '#38557850',
+};
+
+export const darkPalette = {
+	backgroundColor: '#0b0f17',
+	linksColor: '#9daec4',
+	pointFill: '#4a6c93',
+	blockFill: '#293f5e',
+	rootNodePointFill: '#f5820a',
+	rootNodeBlockFill: '#fbcb98',
+	nodeStrokeColor: '#dce3eb',
+	hoverStrokeColor: '#9daec450',
+	hoverFillColor: '#9daec450',
+	textStrokeColor: '#0b0f17',
+	textFillColor: '#f5f7fa',
+	forwardHighlightColor: '#1c7df270',
+	reverseHighlightColor: '#38557870',
+};

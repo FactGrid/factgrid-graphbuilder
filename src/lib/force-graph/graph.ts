@@ -2,7 +2,7 @@ import {zoom as d3Zoom, zoomTransform as d3ZoomTransform, type D3ZoomEvent} from
 import {select as d3Select, type Selection} from 'd3-selection';
 import {drag as d3Drag, type D3DragEvent} from 'd3-drag';
 import {writable} from 'svelte/store';
-import type {GraphEngineNotifier, GraphNotifier, GraphState, Point, VisParameters} from './types';
+import type {GraphEngineNotifier, GraphExportPayload, GraphNotifier, GraphState, Point, VisParameters} from './types';
 
 const zoom2NodesFactor = 4;
 
@@ -70,6 +70,11 @@ export class Graph implements GraphNotifier {
 	private readonly d3Canvas: Selection<HTMLCanvasElement, unknown, null, undefined>;
 	private hoverNodeId: string | undefined;
 	private draggable = true;
+
+	private readonly pendingExports = new Map<string, {
+		resolve: (payload: GraphExportPayload) => void;
+		reject: (error: Error) => void;
+	}>();
 
 	private constructor(private readonly canvas: HTMLCanvasElement, createCanvasNotifier: (self: GraphNotifier) => GraphEngineNotifier) {
 		this.graphEngine = createCanvasNotifier(this);
@@ -151,6 +156,10 @@ export class Graph implements GraphNotifier {
 		this.graphEngine.setVisParameters(visParameters);
 	}
 
+	public setTheme(theme: 'light' | 'dark') {
+		this.graphEngine.setTheme(theme);
+	}
+
 	public destroy() {
 		this.resizeObserver.unobserve(this.canvas);
 		this.graphEngine.destroy();
@@ -186,6 +195,40 @@ export class Graph implements GraphNotifier {
 
 	public setError(error: string | undefined): void {
 		this.error.set(error);
+	}
+
+	public async requestExportData(): Promise<GraphExportPayload> {
+		const requestId = Math.random().toString(36).slice(2);
+
+		return new Promise<GraphExportPayload>((resolve, reject) => {
+			const timeoutId = window.setTimeout(() => {
+				this.pendingExports.delete(requestId);
+				reject(new Error('Timed out waiting for graph export data'));
+			}, 10_000);
+
+			this.pendingExports.set(requestId, {
+				resolve: payload => {
+					window.clearTimeout(timeoutId);
+					resolve(payload);
+				},
+				reject: error => {
+					window.clearTimeout(timeoutId);
+					reject(error);
+				},
+			});
+
+			this.graphEngine.exportGraph(requestId);
+		});
+	}
+
+	public onGraphExportReady(requestId: string, payload: GraphExportPayload) {
+		const pending = this.pendingExports.get(requestId);
+		if (!pending) {
+			return;
+		}
+
+		this.pendingExports.delete(requestId);
+		pending.resolve(payload);
 	}
 
 	private adjustCanvasSize() {

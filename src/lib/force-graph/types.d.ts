@@ -16,7 +16,9 @@ export type GraphEngineNotifier = {
 	onPointerUp(button: number): void;
 	destroy(): void;
 	setVisParameters(visParameters: VisParameters): void;
+	setTheme(theme: 'light' | 'dark'): void;
 	onLayoutComplete(x: number, y: number, width: number, height: number): void;
+	exportGraph(requestId: string): void;
 };
 
 export type GraphState = 'loading' | 'ok' | 'error';
@@ -28,6 +30,36 @@ export type GraphNotifier = {
 	setState(state: GraphState): void;
 	setError(error: string | undefined): void;
 	onNodeClicked(url: string): void;
+	onGraphExportReady(requestId: string, payload: GraphExportPayload): void;
+};
+
+export type GraphExportBounds = {x: number; y: number; width: number; height: number};
+
+export type GraphExportNode = {
+	x: number;
+	y: number;
+	radius: number;
+	textWidth: number;
+	textHeight: number;
+	label: string;
+	isRoot: boolean;
+};
+
+export type GraphExportLink = {
+	sections?: Array<[number, number]>;
+	source: {x: number; y: number; radius: number};
+	target: {x: number; y: number; radius: number};
+	isShortcut: boolean;
+};
+
+export type GraphExportPayload = {
+	bounds: GraphExportBounds;
+	isPointShape: boolean;
+	shortcutsColor: string;
+	shortcutsWidth: number;
+	showLabels: boolean;
+	nodes: GraphExportNode[];
+	links: GraphExportLink[];
 };
 
 export type NodeObject = {
@@ -97,4 +129,5 @@ export type VisParameters = {
 	shortcutsColor: string;
 	shortcutsWidth: number;
 	graphDirection: GraphLayout;
+	showLabels: boolean;
 };

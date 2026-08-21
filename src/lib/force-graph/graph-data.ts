@@ -71,7 +71,7 @@ export class SparqlGraphData {
 				continue;
 			}
 
-			const size = line.size === undefined ? undefined : Number.parseInt(line.size.value!, 10);
+			const size = line.size === undefined ? undefined : Number.parseFloat(line.size.value!);
 			if (size !== undefined && size < minSize) {
 				minSize = size;
 			}
@@ -219,7 +219,7 @@ const itemTooltip = (label: string, size: number | undefined = undefined) => {
 	label = escape(label);
 
 	if (size !== undefined) {
-		label += `<br>(${size} items)`;
+		label += `<br>(${size})`;
 	}
 
 	return label;

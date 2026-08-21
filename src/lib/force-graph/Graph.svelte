@@ -6,16 +6,34 @@
     import IconEx from "$lib/components/common/IconEx.svelte";
     import Spinner from "$lib/components/common/Spinner.svelte";
     import type { GraphState, VisParameters } from "./types";
+    import { theme } from "$lib/theme";
+    import {
+        buildGraphSvg,
+        downloadGraphPdf,
+        downloadGraphSvg,
+    } from "./graph-export";
 
     export let query: string;
     export let rootNode: string | undefined;
     export let visParameters: VisParameters;
+
+    export const exportGraph = async (format: "svg" | "pdf") => {
+        const payload = await graph.requestExportData();
+        const svg = buildGraphSvg(payload);
+
+        if (format === "svg") {
+            downloadGraphSvg(svg, "factgrid-graph.svg");
+        } else {
+            await downloadGraphPdf(svg, payload.bounds, "factgrid-graph.pdf");
+        }
+    };
 
     let canvas: HTMLCanvasElement;
     let graph: Graph;
 
     $: graph?.load(query, rootNode);
     $: graph?.setVisParameters(visParameters);
+    $: graph?.setTheme($theme);
 
     let pointerPos = writable({ x: -1e12, y: -1e12 });
     let tooltip = writable<string | undefined>();
@@ -27,6 +45,7 @@
     onMount(async () => {
         graph = await Graph.create(canvas, visParameters);
         ({ pointerPos, tooltip, isHover, isDragging, state, error } = graph);
+        graph.setTheme($theme);
     });
 
     onDestroy(() => {
@@ -54,7 +73,7 @@
         bind:clientHeight={height}
     />
     <div
-        class="absolute p-1 rounded-sm text-gray-100 bg-black/60 text-center"
+        class="absolute p-1 rounded-md text-white bg-brand-900/85 dark:bg-brand-950/90 text-center"
         style={tooltipStyle}
     >
         {@html $tooltip}
@@ -62,17 +81,20 @@
 
     {#if $state === "loading"}
         <div class="absolute inset-0 flex items-center justify-center">
-            <Spinner class="w-16 h-16" />
+            <Spinner class="w-16 h-16 text-accent" />
         </div>
     {/if}
 
     {#if $state === "error"}
         <div class="absolute inset-0 flex items-center justify-center ">
             <div
-                class="flex p-4 mx-4 text-sm rounded bg-gray-800 text-red-400 items-center"
+                class="flex p-4 mx-4 text-sm rounded-lg border border-brand-200 bg-white text-red-600 dark:border-brand-700 dark:bg-brand-900 dark:text-red-400 items-center"
                 role="alert"
             >
-                <IconEx path={mdiAlert} class="w-16 h-16 fill-red-400" />
+                <IconEx
+                    path={mdiAlert}
+                    class="w-16 h-16 fill-red-600 dark:fill-red-400"
+                />
                 <div class="pl-4 space-y-3">
                     <div class="font-medium">Unable to load graph data</div>
                     <div>{$error}</div>

@@ -1,18 +1,23 @@
 <script lang="ts">
-	export let wrapper: HTMLElement;
-	export let isOpen: boolean;
-	export let isPopup: boolean;
-	export let toRight: boolean;
+	import type {Snippet} from 'svelte';
 
-	isOpen;
-	isPopup;
-	toRight;
+	let {
+		wrapper = $bindable(undefined),
+		isOpen,
+		isDialog,
+		children,
+	}: {
+		wrapper?: HTMLElement;
+		isOpen: boolean;
+		isDialog: boolean;
+		children: Snippet;
+	} = $props();
 </script>
 
 <div
-	class="w-64 flex flex-col bg-gray-700 shadow-md shadow-gray-900 rounded-sm pb-1 overflow-hidden z-10"
+	class="w-64 flex flex-col bg-white border border-brand-200 shadow-md shadow-brand-900/10 rounded-md pb-1 overflow-hidden z-10 dark:bg-brand-900 dark:border-brand-700 dark:shadow-black/40"
 	bind:this={wrapper}
 	aria-label="color picker"
 >
-	<slot />
+	{@render children()}
 </div>
