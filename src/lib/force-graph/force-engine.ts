@@ -27,15 +27,22 @@ export class ForceEngine implements LayoutEngine {
 
 	private engineRunning = false;
 
-	// How many times to tick the force engine at init before starting to render
+	// How many times to tick the force engine at init before starting to render. Kept the same for
+	// large graphs — cutting this down previously left the simulation nowhere near settled (alpha
+	// decay is calibrated for ~400 ticks total), producing a visibly stretched/unsettled layout.
+	// The actual responsiveness fix for large graphs is the cooldown below, not fewer warmup ticks.
 	private get warmupTicks() {
 		return 100;
 	}
 
 	private readonly _cooldownTicks: number = Number.POSITIVE_INFINITY;
 
+	// Large graphs stop ticking immediately after warmup instead of continuing to animate for 15s —
+	// at that scale every tick also means a full canvas redraw (tens of thousands of nodes/links),
+	// which otherwise keeps the tab busy and makes unrelated UI (opening settings, panning) sluggish
+	// for the whole cooldown window. The graph becomes a static image the user can pan/zoom smoothly.
 	private get cooldownTime() {
-		return 15_000;
+		return this.graphData?.isLargeGraph ? 0 : 15_000;
 	} // Ms
 
 	private cntTicks = 0;
@@ -60,6 +67,10 @@ export class ForceEngine implements LayoutEngine {
 	}
 
 	public setGraphData(graphData: SparqlGraphData, replace = true) {
+		// Clears any stale spanning-tree parent info left over from a previous hierarchical layout —
+		// "show path to root" only makes sense while a tree layout is actually active.
+		graphData.treeParent = undefined;
+
 		for (const node of graphData.nodes) {
 			node.shape = 'point';
 		}

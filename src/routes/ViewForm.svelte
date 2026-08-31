@@ -6,11 +6,16 @@
 	import ColorInput from "$lib/components/common/ColorInput.svelte";
 	import NumberInput from "$lib/components/common/NumberInput.svelte";
 	import { Switch } from "$lib/components/ui/switch/index.js";
-	import type { VisParameters } from "$lib/force-graph/types";
+	import type { ShortcutStatus, VisParameters } from "$lib/force-graph/types";
 
 	export let visParameters: VisParameters;
+	export let shortcutStatus: ShortcutStatus;
 
 	const dispatch = createEventDispatcher();
+
+	const onComputeShortcuts = () => {
+		dispatch("computeshortcuts");
+	};
 
 	const onChange = () => {
 		dispatch("submit", visParameters);
@@ -55,4 +60,25 @@
 			on:change={onChange}
 		/>
 	</FieldInline>
+	{#if shortcutStatus.skipped}
+		<FieldInline label="Shortcut detection">
+			{#if shortcutStatus.progress}
+				<span class="text-xs text-brand-500 dark:text-brand-400">
+					Detecting… {Math.round(
+						(shortcutStatus.progress.processed /
+							shortcutStatus.progress.total) *
+							100,
+					)}%
+				</span>
+			{:else}
+				<button
+					type="button"
+					class="text-xs underline hover:no-underline text-brand-700 dark:text-brand-200"
+					on:click={onComputeShortcuts}
+				>
+					Detect shortcuts now
+				</button>
+			{/if}
+		</FieldInline>
+	{/if}
 </div>

@@ -14,10 +14,16 @@
     import * as DropdownMenu from "$lib/components/ui/dropdown-menu/index.js";
     import EditorSettingsPanel from "./EditorSettingsPanel.svelte";
     import isEqual from "lodash.isequal";
-    import type { VisParameters } from "$lib/force-graph/types";
+    import { writable } from "svelte/store";
+    import type { ShortcutStatus, VisParameters } from "$lib/force-graph/types";
 
     let graphComponent: Graph;
     let exporting = false;
+    let shortcutStatus = writable<ShortcutStatus>({ skipped: false });
+
+    const onComputeShortcuts = () => {
+        graphComponent?.computeShortcuts();
+    };
 
     const onExport = async (format: "svg" | "pdf") => {
         if (!graphComponent || exporting) {
@@ -73,6 +79,7 @@
     <div class="relative h-screen max-h-screen w-full bg-white dark:bg-brand-950">
         <Graph
             bind:this={graphComponent}
+            bind:shortcutStatus
             {query}
             rootNode={appParameters.queryParameters.item}
             visParameters={appParameters.visParameters}
@@ -85,8 +92,10 @@
             <EditorSettingsPanel
                 {appParameters}
                 {visParameters}
+                shortcutStatus={$shortcutStatus}
                 on:querysubmit={onQueryFormSubmit}
                 on:vissubmit={onViewFormSubmit}
+                on:computeshortcuts={onComputeShortcuts}
             />
         </div>
 

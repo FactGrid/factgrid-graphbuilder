@@ -10,10 +10,11 @@
     import ViewForm from "./ViewForm.svelte";
     import type { AppParameters } from "./app";
     import type { QueryParameters } from "./sparql-gen";
-    import type { VisParameters } from "$lib/force-graph/types";
+    import type { ShortcutStatus, VisParameters } from "$lib/force-graph/types";
 
     export let appParameters: AppParameters;
     export let visParameters: VisParameters;
+    export let shortcutStatus: ShortcutStatus;
 
     let expanded = false;
 
@@ -57,6 +58,10 @@
     const onVisSubmit = (event: CustomEvent<VisParameters>) => {
         dispatch("vissubmit", event.detail);
     };
+
+    const onComputeShortcuts = () => {
+        dispatch("computeshortcuts");
+    };
 </script>
 
 {#if expanded}
@@ -83,7 +88,12 @@
 
             <Heading2 class="text-2xl font-semibold mt-8">Visualization settings</Heading2>
             <div class="mt-6">
-                <ViewForm {visParameters} on:submit={onVisSubmit} />
+                <ViewForm
+                    {visParameters}
+                    {shortcutStatus}
+                    on:submit={onVisSubmit}
+                    on:computeshortcuts={onComputeShortcuts}
+                />
             </div>
         </Card>
     </div>

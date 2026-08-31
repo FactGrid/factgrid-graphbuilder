@@ -3,6 +3,7 @@
 import {ForceEngine} from './force-engine';
 import {ElkEngine} from './elk-engine';
 import {SparqlGraphData} from './graph-data';
+import {layoutConnectedSubgraph} from './simple-layered-layout';
 import {lightPalette, darkPalette} from './palette';
 import type {Canvas, CanvasContext, GraphLayout, GraphEngineNotifier, LayoutEngine, LinkObject, NodeObject, Point, SearchObject, ShortcutsMode, VisParameters, GraphNotifier, ElkDirection, GraphExportPayload, GraphExportBounds} from './types';
 
@@ -29,6 +30,12 @@ export class GraphEngine implements GraphEngineNotifier {
 	private devicePixelRatio = 1;
 
 	private abortController: AbortController | undefined;
+	private shortcutAbortController: AbortController | undefined;
+	private pinnedNodeId: string | undefined;
+	private layoutErrorPending = false;
+	private zoomTransform: ZoomSettings = {x: 0, y: 0, k: 1};
+	private focusedNodes: Set<NodeObject> | undefined;
+	private focusedLinks: Set<LinkObject> | undefined;
 
 	private backgroundColor = lightPalette.backgroundColor;
 
@@ -97,6 +104,7 @@ export class GraphEngine implements GraphEngineNotifier {
 
 	public onZoomTransform(t: ZoomSettings) {
 		this.isZoomDragging = true;
+		this.zoomTransform = t;
 
 		for (const ctx of [this.ctx, this.shadowCtx]) {
 			ctx.setTransform(this.devicePixelRatio, 0, 0, this.devicePixelRatio, 0, 0);
@@ -113,6 +121,12 @@ export class GraphEngine implements GraphEngineNotifier {
 
 	public onLayoutComplete(x: number, y: number, width: number, height: number) {
 		this.graphNotifier.onLayoutComplete(x, y, width, height);
+	}
+
+	public onLayoutError(message: string) {
+		this.layoutErrorPending = true;
+		this.graphNotifier.setError(message);
+		this.graphNotifier.setState('error');
 	}
 
 	// The force-directed layout keeps ticking (and moving nodes) for up to 15s after load
@@ -212,8 +226,16 @@ export class GraphEngine implements GraphEngineNotifier {
 
 	public async load(query: string, rootNode: string | undefined) {
 		this.abort();
+		this.shortcutAbortController?.abort();
+		this.shortcutAbortController = undefined;
+		this.pinnedNodeId = undefined;
+		this.layoutErrorPending = false;
+		this.focusedNodes = undefined;
+		this.focusedLinks = undefined;
+		this.graphNotifier.setIsolatedConnectionsLabel(undefined);
 
 		this.graphNotifier.setState('loading');
+		this.graphNotifier.setShortcutStatus({skipped: false});
 
 		this.abortController = new AbortController();
 		try {
@@ -225,7 +247,12 @@ export class GraphEngine implements GraphEngineNotifier {
 			this.clearCanvas(this.ctx, this.backgroundColor);
 			this.clearCanvas(this.shadowCtx);
 			this.engine.setGraphData(this.graphData);
-			this.graphNotifier.setState('ok');
+			// setGraphData() can synchronously call onLayoutError (e.g. ElkEngine refusing a graph
+			// that's too large) — don't clobber that with 'ok' if it just happened.
+			if (!this.layoutErrorPending) {
+				this.graphNotifier.setState('ok');
+				this.graphNotifier.setShortcutStatus({skipped: this.graphData.shortcutDetectionSkipped});
+			}
 		} catch (error_: unknown) {
 			if ((error_ as Error).name !== 'AbortError') {
 				this.graphNotifier.setError((error_ as Error).message);
@@ -234,6 +261,86 @@ export class GraphEngine implements GraphEngineNotifier {
 		} finally {
 			this.abortController = undefined;
 		}
+	}
+
+	public async computeShortcuts() {
+		this.shortcutAbortController?.abort();
+		const abortController = new AbortController();
+		this.shortcutAbortController = abortController;
+
+		await this.graphData.computeShortcuts(
+			(processed, total) => {
+				if (abortController.signal.aborted) {
+					return;
+				}
+
+				this.graphNotifier.setShortcutStatus({
+					skipped: this.graphData.shortcutDetectionSkipped,
+					progress: processed < total ? {processed, total} : undefined,
+				});
+				this.needsRedraw = true;
+			},
+			abortController.signal,
+		);
+
+		if (abortController.signal.aborted) {
+			return;
+		}
+
+		this.shortcutAbortController = undefined;
+		this.graphNotifier.setShortcutStatus({skipped: this.graphData.shortcutDetectionSkipped});
+		this.needsRedraw = true;
+	}
+
+	public setPinnedNode(nodeId: string | undefined) {
+		this.pinnedNodeId = nodeId;
+
+		if (nodeId === undefined) {
+			this.forwardNodes.clear();
+			this.forwardLinks.clear();
+			this.reverseNodes.clear();
+			this.reverseLinks.clear();
+		} else {
+			const node = this.graphData.nodesMap.get(nodeId);
+			if (node) {
+				({childrenNodes: this.forwardNodes, childrenLinks: this.forwardLinks} = this.graphData.getConnectedNodes(node, 'forward'));
+				({childrenNodes: this.reverseNodes, childrenLinks: this.reverseLinks} = this.graphData.getConnectedNodes(node, 'reverse'));
+			}
+		}
+
+		this.needsRedraw = true;
+	}
+
+	// Shows exactly what "Highlight connections" highlights (everything reachable forward and
+	// reverse from one node) as its own small, clean tree — for a huge, densely-branching graph,
+	// drawing everything else is both slow and beside the point once you've picked a specific node
+	// to trace. The full graph's data and positions are never discarded, so switching back is just
+	// re-running the (already fast, O(V+E)) layout again rather than restoring a cache.
+	public setIsolatedConnections(nodeId: string | undefined) {
+		if (nodeId === undefined) {
+			this.focusedNodes = undefined;
+			this.focusedLinks = undefined;
+			this.graphNotifier.setIsolatedConnectionsLabel(undefined);
+			this.engine.setGraphData(this.graphData);
+			this.needsRedraw = true;
+			return;
+		}
+
+		const targetNode = this.graphData.nodesMap.get(nodeId);
+		if (!targetNode) {
+			return;
+		}
+
+		const {childrenNodes: forwardNodes, childrenLinks: forwardLinks} = this.graphData.getConnectedNodes(targetNode, 'forward');
+		const {childrenNodes: reverseNodes, childrenLinks: reverseLinks} = this.graphData.getConnectedNodes(targetNode, 'reverse');
+
+		const bounds = layoutConnectedSubgraph(targetNode, forwardNodes, reverseNodes);
+
+		this.focusedNodes = new Set([targetNode, ...forwardNodes, ...reverseNodes]);
+		this.focusedLinks = new Set([...forwardLinks, ...reverseLinks]);
+		this.graphNotifier.setIsolatedConnectionsLabel(targetNode.label);
+		this.graphNotifier.onLayoutComplete(bounds.x, bounds.y, bounds.width, bounds.height);
+		this.needsRedraw = true;
 	}
 
 	public setPointerPos(point: Point) {
@@ -294,7 +401,18 @@ export class GraphEngine implements GraphEngineNotifier {
 
 		requestAnimationFrame(() => { // Trigger click events asynchronously, to allow hoverObj to be set (on frame)
 			if (button === 0 && this.hoverObject?.type === 'Node') {
-				this.graphNotifier.onNodeClicked(this.hoverObject.object.url);
+				const node = this.hoverObject.object;
+				if (this.graphData.isLargeGraph) {
+					this.graphNotifier.onNodeContextMenu({
+						nodeId: node.id,
+						url: node.url,
+						label: node.label,
+						pos: this.pointerPos,
+						canIsolateConnections: this.graphData.treeParent !== undefined,
+					});
+				} else {
+					this.graphNotifier.onNodeClicked(node.url);
+				}
 			}
 		});
 	}
@@ -364,14 +482,18 @@ export class GraphEngine implements GraphEngineNotifier {
 
 	private onLinkHover?(link: LinkObject | undefined, previousLink: LinkObject | undefined): void;
 	private onNodeHover(node: NodeObject | undefined, previousNode: NodeObject | undefined) {
-		if (node) {
-			({childrenNodes: this.forwardNodes, childrenLinks: this.forwardLinks} = this.graphData.getConnectedNodes(node, 'forward'));
-			({childrenNodes: this.reverseNodes, childrenLinks: this.reverseLinks} = this.graphData.getConnectedNodes(node, 'reverse'));
-		} else {
-			this.forwardNodes.clear();
-			this.forwardLinks.clear();
-			this.reverseNodes.clear();
-			this.reverseLinks.clear();
+		// On large graphs, forward/reverse highlighting is driven exclusively by setPinnedNode
+		// (triggered from a click, not continuous hover) — see onPointerUp/onNodeContextMenu.
+		if (!this.graphData.isLargeGraph) {
+			if (node) {
+				({childrenNodes: this.forwardNodes, childrenLinks: this.forwardLinks} = this.graphData.getConnectedNodes(node, 'forward'));
+				({childrenNodes: this.reverseNodes, childrenLinks: this.reverseLinks} = this.graphData.getConnectedNodes(node, 'reverse'));
+			} else {
+				this.forwardNodes.clear();
+				this.forwardLinks.clear();
+				this.reverseNodes.clear();
+				this.reverseLinks.clear();
+			}
 		}
 
 		this.hoverNode = node ?? undefined;
@@ -379,12 +501,42 @@ export class GraphEngine implements GraphEngineNotifier {
 	}
 
 	// eslint-disable-next-line complexity
+	// Large graphs keep every node/link positioned at all times, but only bother drawing (and, for
+	// hierarchical layouts, label-rendering) whatever actually falls in the current viewport — with
+	// a tree of tens of thousands of labeled boxes, redrawing the entire graph on every pan/zoom
+	// frame is what makes panning feel sluggish, and almost none of it is ever on screen at once.
+	// A world-space margin around the viewport avoids nodes visibly popping in/out right at the edge.
+	private getVisibleBounds() {
+		const margin = 200;
+		const cssWidth = this.canvas.width / this.devicePixelRatio;
+		const cssHeight = this.canvas.height / this.devicePixelRatio;
+		const {x: tx, y: ty, k} = this.zoomTransform;
+		return {
+			minX: (-tx / k) - margin,
+			maxX: ((cssWidth - tx) / k) + margin,
+			minY: (-ty / k) - margin,
+			maxY: ((cssHeight - ty) / k) + margin,
+		};
+	}
+
+	private isNodeInBounds(node: NodeObject, bounds: {minX: number; maxX: number; minY: number; maxY: number}) {
+		return node.x! >= bounds.minX && node.x! <= bounds.maxX && node.y! >= bounds.minY && node.y! <= bounds.maxY;
+	}
+
 	private paintCanvas() {
 		const ctx = this.ctx;
 		const isPoint = this.graphData.nodes[0]?.shape === 'point';
 
+		// Isolated connections (see setIsolatedConnections) always win over viewport culling — it's
+		// already a small, deliberately chosen set, and should stay visible regardless of where the
+		// view has been panned to since focusing.
+		const bounds = (!this.focusedNodes && this.graphData.isLargeGraph) ? this.getVisibleBounds() : undefined;
+		const visibleNodes = (this.focusedNodes ?? (bounds ? this.graphData.nodes.filter(node => this.isNodeInBounds(node, bounds)) : this.graphData.nodes)) as Iterable<DrawNode>;
+
 		// Draw links
-		const links = this.graphData.viewLinks;
+		const links = this.focusedLinks ?? (bounds
+			? this.graphData.viewLinks.filter(link => this.isNodeInBounds(link.source, bounds) || this.isNodeInBounds(link.target, bounds))
+			: this.graphData.viewLinks);
 		if (this.shortcutsColor === this.linksColor && this.shortcutsWidth === this.linksWidth) {
 			ctx.strokeStyle = this.linksColor;
 			ctx.lineWidth = this.linksWidth;
@@ -413,33 +565,36 @@ export class GraphEngine implements GraphEngineNotifier {
 			drawLinks(this.reverseLinks, ctx);
 		}
 
-		// Draw arrows
-		const arrowsSizeBase = isPoint ? 13 : 8;
-		const arrowsSize = arrowsSizeBase * Math.sqrt(this.linksWidth);
-		const shortcutsArrowsSize = arrowsSizeBase * Math.sqrt(this.shortcutsWidth);
+		// Draw arrows — skipped on large force-directed graphs: at hairball density they're
+		// indistinguishable dots anyway, and the per-link trigonometry is one of the more expensive
+		// parts of a redraw. Large hierarchical (block-shape) layouts keep arrows — they're static,
+		// far less dense per screen area, and the direction cue is worth keeping in a tree view.
+		if (!(this.graphData.isLargeGraph && isPoint)) {
+			const arrowsSizeBase = isPoint ? 13 : 8;
+			const arrowsSize = arrowsSizeBase * Math.sqrt(this.linksWidth);
+			const shortcutsArrowsSize = arrowsSizeBase * Math.sqrt(this.shortcutsWidth);
 
-		if (this.shortcutsColor === this.linksColor && this.shortcutsWidth === this.linksWidth) {
-			const arrowsFilter = this.shortcutsWidth === 0 ? ((link: LinkObject) => !link.isShortcut) : undefined;
-			ctx.fillStyle = this.linksColor;
-			drawArrows(links, arrowsSize, ctx, arrowsFilter);
-		} else {
-			ctx.strokeStyle = this.linksColor;
-			ctx.fillStyle = this.linksColor;
-			drawArrows(links, arrowsSize, ctx, link => !link.isShortcut);
+			if (this.shortcutsColor === this.linksColor && this.shortcutsWidth === this.linksWidth) {
+				const arrowsFilter = this.shortcutsWidth === 0 ? ((link: LinkObject) => !link.isShortcut) : undefined;
+				ctx.fillStyle = this.linksColor;
+				drawArrows(links, arrowsSize, ctx, arrowsFilter);
+			} else {
+				ctx.strokeStyle = this.linksColor;
+				ctx.fillStyle = this.linksColor;
+				drawArrows(links, arrowsSize, ctx, link => !link.isShortcut);
 
-			if (this.shortcutsWidth !== 0) {
-				ctx.fillStyle = this.shortcutsColor;
-				drawArrows(links, shortcutsArrowsSize, ctx, link => link.isShortcut);
+				if (this.shortcutsWidth !== 0) {
+					ctx.fillStyle = this.shortcutsColor;
+					drawArrows(links, shortcutsArrowsSize, ctx, link => link.isShortcut);
+				}
 			}
 		}
 
 		// Draw nodes
-		const nodes = this.graphData.nodes as DrawNode[];
-
 		ctx.strokeStyle = this.nodeStrokeColor;
 		ctx.lineWidth = this.nodeLineWidth;
 		ctx.fillStyle = isPoint ? this.pointFill : this.blockFill;
-		drawNodes(nodes, ctx);
+		drawNodes(visibleNodes, ctx);
 
 		const rootNode = this.graphData.rootNode as DrawNode;
 		if (rootNode) {
@@ -472,7 +627,11 @@ export class GraphEngine implements GraphEngineNotifier {
 
 		// The "show labels" toggle only applies to the force-directed (point-shape) layout —
 		// hierarchical (block-shape) layouts always show labels, since the text is the node itself.
-		if (!isPoint || this.showLabels) {
+		// Large force-directed graphs skip labels regardless of the setting: tens of thousands of
+		// overlapping strokeText/fillText calls in a hairball are both unreadable and the single
+		// biggest per-frame redraw cost. Large hierarchical layouts keep labels — the box *is* the
+		// label there, and unlike the hairball the tree layout is static, not continuously animated.
+		if (!(this.graphData.isLargeGraph && isPoint) && (!isPoint || this.showLabels)) {
 			ctx.beginPath();
 			ctx.font = '10px ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji"';
 			ctx.textAlign = 'left';
@@ -481,7 +640,7 @@ export class GraphEngine implements GraphEngineNotifier {
 			ctx.strokeStyle = this.textStrokeColor;
 			ctx.fillStyle = this.textFillColor;
 
-			for (const node of nodes) {
+			for (const node of visibleNodes) {
 				const x = isPoint ? node.x + node.radius + this.pointOffset : node.x + 5;
 				const y = isPoint ? node.y : node.y + 5;
 				if (isPoint) {
@@ -496,8 +655,9 @@ export class GraphEngine implements GraphEngineNotifier {
 	private paintShadowCanvas() {
 		const ctx = this.shadowCtx;
 
-		const nodes = this.graphData.nodes as DrawNode[];
-		const isPoint = nodes[0]?.shape === 'point';
+		const bounds = (!this.focusedNodes && this.graphData.isLargeGraph) ? this.getVisibleBounds() : undefined;
+		const nodes = (this.focusedNodes ?? (bounds ? this.graphData.nodes.filter(node => this.isNodeInBounds(node, bounds)) : this.graphData.nodes)) as Iterable<DrawNode>;
+		const isPoint = this.graphData.nodes[0]?.shape === 'point';
 
 		for (const node of nodes) {
 			if (isPoint) {

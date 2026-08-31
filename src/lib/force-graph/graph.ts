@@ -2,7 +2,7 @@ import {zoom as d3Zoom, zoomTransform as d3ZoomTransform, type D3ZoomEvent} from
 import {select as d3Select, type Selection} from 'd3-selection';
 import {drag as d3Drag, type D3DragEvent} from 'd3-drag';
 import {writable} from 'svelte/store';
-import type {GraphEngineNotifier, GraphExportPayload, GraphNotifier, GraphState, Point, VisParameters} from './types';
+import type {GraphEngineNotifier, GraphExportPayload, GraphNotifier, GraphState, NodeContextMenuInfo, Point, ShortcutStatus, VisParameters} from './types';
 
 const zoom2NodesFactor = 4;
 
@@ -57,6 +57,10 @@ export class Graph implements GraphNotifier {
 	readonly error = writable<string | undefined>();
 	readonly isDragging = writable<boolean>(false);
 	readonly pointerPos = writable<Point>({x: -1e12, y: -1e12});
+	readonly shortcutStatus = writable<ShortcutStatus>({skipped: false});
+	readonly contextMenu = writable<NodeContextMenuInfo | undefined>();
+	readonly pinnedNodeId = writable<string | undefined>();
+	readonly isolatedConnectionsLabel = writable<string | undefined>();
 
 	private readonly resizeObserver: ResizeObserver;
 
@@ -150,6 +154,19 @@ export class Graph implements GraphNotifier {
 		void this.graphEngine.load(query, rootNode);
 	}
 
+	public computeShortcuts() {
+		void this.graphEngine.computeShortcuts();
+	}
+
+	public setPinnedNode(nodeId: string | undefined) {
+		this.pinnedNodeId.set(nodeId);
+		this.graphEngine.setPinnedNode(nodeId);
+	}
+
+	public setIsolatedConnections(nodeId: string | undefined) {
+		this.graphEngine.setIsolatedConnections(nodeId);
+	}
+
 	public setVisParameters(visParameters: VisParameters) {
 		this.draggable = visParameters.graphDirection === 'none';
 
@@ -176,6 +193,18 @@ export class Graph implements GraphNotifier {
 
 	public onNodeClicked(url: string) {
 		window.open(url, '_blank');
+	}
+
+	public onNodeContextMenu(info: NodeContextMenuInfo) {
+		this.contextMenu.set(info);
+	}
+
+	public setShortcutStatus(status: ShortcutStatus) {
+		this.shortcutStatus.set(status);
+	}
+
+	public setIsolatedConnectionsLabel(label: string | undefined) {
+		this.isolatedConnectionsLabel.set(label);
 	}
 
 	public onLayoutComplete(x: number, y: number, width: number, height: number) {
