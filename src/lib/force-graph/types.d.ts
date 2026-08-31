@@ -23,6 +23,10 @@ export type GraphEngineNotifier = {
 	setPinnedNode(nodeId: string | undefined): void;
 	computeShortcuts(): void;
 	setIsolatedConnections(nodeId: string | undefined): void;
+	zoomToFit(): void;
+	zoomToRoot(): void;
+	zoomToNode(nodeId: string): void;
+	searchNodes(query: string): void;
 };
 
 export type GraphState = 'loading' | 'ok' | 'error';
@@ -40,6 +44,11 @@ export type NodeContextMenuInfo = {
 	canIsolateConnections: boolean;
 };
 
+export type SearchResult = {
+	id: string;
+	label: string;
+};
+
 export type GraphNotifier = {
 	setTooltip(contents: string | undefined): void;
 	setHoverNodeId(nodeId: string | undefined): void;
@@ -51,6 +60,8 @@ export type GraphNotifier = {
 	onNodeContextMenu(info: NodeContextMenuInfo): void;
 	setShortcutStatus(status: ShortcutStatus): void;
 	setIsolatedConnectionsLabel(label: string | undefined): void;
+	zoomToBounds(x: number, y: number, width: number, height: number): void;
+	setSearchResults(results: SearchResult[]): void;
 };
 
 export type GraphExportBounds = {x: number; y: number; width: number; height: number};

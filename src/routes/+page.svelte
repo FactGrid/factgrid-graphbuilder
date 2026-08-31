@@ -15,7 +15,7 @@
     import EditorSettingsPanel from "./EditorSettingsPanel.svelte";
     import isEqual from "lodash.isequal";
     import { writable } from "svelte/store";
-    import type { ShortcutStatus, VisParameters } from "$lib/force-graph/types";
+    import type { GraphLayout, ShortcutStatus, VisParameters } from "$lib/force-graph/types";
 
     let graphComponent: Graph;
     let exporting = false;
@@ -62,8 +62,9 @@
 
     const rootPage = $page.url.origin + $page.url.pathname;
 
-    const onQueryFormSubmit = async (event: CustomEvent<QueryParameters>) => {
-        await updateUrl(event.detail, appParameters.visParameters, false);
+    const onQueryFormSubmit = async (event: CustomEvent<{queryParameters: QueryParameters; graphDirection: GraphLayout}>) => {
+        const {queryParameters: submittedQuery, graphDirection} = event.detail;
+        await updateUrl(submittedQuery, {...appParameters.visParameters, graphDirection}, false);
     };
 
     const onViewFormSubmit = async (event: CustomEvent<VisParameters>) => {

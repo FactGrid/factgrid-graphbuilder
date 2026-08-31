@@ -1,8 +1,10 @@
 <script lang="ts">
     import {
         modes,
+        graphLayouts,
         defaultLanguage,
         defaultMode,
+        defaultGraphLayout,
         getLinks,
         type AppParameters,
     } from "./app";
@@ -16,6 +18,9 @@
     import { Textarea } from "$lib/components/ui/textarea/index.js";
     import DropdownMenu from "$lib/components/common/DropdownMenu.svelte";
     import { createEventDispatcher } from "svelte";
+    import type { GraphLayout } from "$lib/force-graph/types";
+    import { mdiInformationOutline } from "@mdi/js";
+    import IconEx from "$lib/components/common/IconEx.svelte";
 
     import {
         queryParametersIsValid,
@@ -39,6 +44,7 @@
     let unitProperty: string | undefined;
     let unitPropertyObject: ValueItem | undefined;
     let sizeMode: "none" | "size" | "unit" = "none";
+    let graphDirection: GraphLayout = defaultGraphLayout;
 
     const sizeModeOptions: Record<string, string> = {
         none: "None",
@@ -64,6 +70,7 @@
         } = appParameters.queryParameters);
 
         sizeMode = unitProperty ? "unit" : sizeProperty ? "size" : "none";
+        graphDirection = appParameters.visParameters.graphDirection;
 
         // https://github.com/sveltejs/svelte/issues/4470
         // await tick();
@@ -84,10 +91,10 @@
 
     $: isValid = queryParametersIsValid(formQueryParameters);
     $: tools = getLinks(formQueryParameters);
-    $: isForceDirected = appParameters.visParameters.graphDirection === "none";
+    $: isForceDirected = graphDirection === "none";
 
     const onSubmit = () => {
-        dispatch("submit", formQueryParameters);
+        dispatch("submit", {queryParameters: formQueryParameters, graphDirection});
     };
 
     const onSizeModeChange = () => {
@@ -118,6 +125,41 @@
         <Field label="SPARQL query">
             <Textarea bind:value={wdqs} class="min-h-32 font-mono text-sm" />
         </Field>
+
+        <div
+            class="flex items-start gap-3 px-3 py-2 text-sm rounded-lg border border-brand-200 bg-brand-50/60 text-brand-700 dark:border-brand-700 dark:bg-brand-900/40 dark:text-brand-200"
+        >
+            <IconEx
+                path={mdiInformationOutline}
+                class="w-5 h-5 flex-shrink-0 mt-0.5 fill-brand-400 dark:fill-brand-500"
+            />
+            <div class="space-y-1">
+                <div>
+                    The query's result needs these bindings for the graph to be built
+                    from it:
+                </div>
+                <ul class="list-disc pl-4 space-y-0.5">
+                    <li>
+                        <span class="font-mono">?item</span> — required, a unique IRI
+                        per node.
+                    </li>
+                    <li>
+                        <span class="font-mono">?itemLabel</span> — optional, the node's
+                        display label (falls back to the tail of the item's IRI).
+                    </li>
+                    <li>
+                        <span class="font-mono">?linkTo</span> — optional, the IRI of another
+                        node this one links to; repeat the row (same
+                        <span class="font-mono">?item</span>, different
+                        <span class="font-mono">?linkTo</span>) for more than one link.
+                    </li>
+                    <li>
+                        <span class="font-mono">?size</span> — optional, a number used to
+                        scale node size (force-directed layout only).
+                    </li>
+                </ul>
+            </div>
+        </div>
     {:else}
         <Field label="Traversal property">
             <ItemEdit
@@ -137,15 +179,21 @@
             />
         </Field>
 
-        <Field label="Iterations">
-            <NumberInput
-                bind:value={iterations}
-                min={0}
-                max={100000}
-                placeholder="Unlimited"
-                treatZeroAsUndefined={true}
-            />
-        </Field>
+        <div class="flex gap-4">
+            <Field class="w-[calc(50%-0.25rem)] box-border" label="Iterations">
+                <NumberInput
+                    bind:value={iterations}
+                    min={0}
+                    max={100000}
+                    placeholder="Unlimited"
+                    treatZeroAsUndefined={true}
+                />
+            </Field>
+
+            <Field class="w-[calc(50%-0.25rem)] box-border" label="Layout">
+                <Select options={graphLayouts} bind:value={graphDirection} />
+            </Field>
+        </div>
 
         {#if isForceDirected}
             <Field label="Node size based on">

@@ -10,7 +10,7 @@
     import ViewForm from "./ViewForm.svelte";
     import type { AppParameters } from "./app";
     import type { QueryParameters } from "./sparql-gen";
-    import type { ShortcutStatus, VisParameters } from "$lib/force-graph/types";
+    import type { GraphLayout, ShortcutStatus, VisParameters } from "$lib/force-graph/types";
 
     export let appParameters: AppParameters;
     export let visParameters: VisParameters;
@@ -50,7 +50,7 @@
 
     const dispatch = createEventDispatcher();
 
-    const onQuerySubmit = (event: CustomEvent<QueryParameters>) => {
+    const onQuerySubmit = (event: CustomEvent<{queryParameters: QueryParameters; graphDirection: GraphLayout}>) => {
         expanded = false;
         dispatch("querysubmit", event.detail);
     };

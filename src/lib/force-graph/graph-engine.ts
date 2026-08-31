@@ -5,7 +5,7 @@ import {ElkEngine} from './elk-engine';
 import {SparqlGraphData} from './graph-data';
 import {layoutConnectedSubgraph} from './simple-layered-layout';
 import {lightPalette, darkPalette} from './palette';
-import type {Canvas, CanvasContext, GraphLayout, GraphEngineNotifier, LayoutEngine, LinkObject, NodeObject, Point, SearchObject, ShortcutsMode, VisParameters, GraphNotifier, ElkDirection, GraphExportPayload, GraphExportBounds} from './types';
+import type {Canvas, CanvasContext, GraphLayout, GraphEngineNotifier, LayoutEngine, LinkObject, NodeObject, Point, SearchObject, ShortcutsMode, VisParameters, GraphNotifier, ElkDirection, GraphExportPayload, GraphExportBounds, SearchResult} from './types';
 
 type DragObject = NodeObject & {
 	__initialDragPos?: {x: number; y: number; fx: number | undefined; fy: number | undefined};
@@ -201,6 +201,87 @@ export class GraphEngine implements GraphEngineNotifier {
 		};
 
 		this.graphNotifier.onGraphExportReady(requestId, payload);
+	}
+
+	// Same per-node box math as computeExportBounds, but for a single node plus a fixed margin —
+	// used by the "zoom to root"/search-result navigation controls to frame one node with enough
+	// surrounding context to be readable, rather than zooming in tight on just its own box.
+	private computeNodeZoomBounds(node: NodeObject): GraphExportBounds {
+		const margin = 250;
+		const isPointShape = node.shape === 'point';
+		let minX: number;
+		let maxX: number;
+		let minY: number;
+		let maxY: number;
+
+		if (isPointShape) {
+			const labelWidth = this.showLabels ? this.pointOffset + node.textWidth : 0;
+			const halfTextHeight = this.showLabels ? node.textHeight / 2 : 0;
+			minX = node.x! - node.radius;
+			maxX = node.x! + node.radius + labelWidth;
+			minY = node.y! - Math.max(node.radius, halfTextHeight);
+			maxY = node.y! + Math.max(node.radius, halfTextHeight);
+		} else {
+			minX = node.x!;
+			maxX = node.x! + node.textWidth + 10;
+			minY = node.y!;
+			maxY = node.y! + node.textHeight + 10;
+		}
+
+		return {
+			x: minX - margin,
+			y: minY - margin,
+			width: (maxX - minX) + (2 * margin),
+			height: (maxY - minY) + (2 * margin),
+		};
+	}
+
+	public zoomToFit() {
+		const isPointShape = this.graphData.nodes[0]?.shape === 'point';
+		const showLabels = !isPointShape || this.showLabels;
+		const bounds = this.computeExportBounds(isPointShape, showLabels);
+		this.graphNotifier.zoomToBounds(bounds.x, bounds.y, bounds.width, bounds.height);
+	}
+
+	public zoomToRoot() {
+		const rootNode = this.graphData.rootNode;
+		if (!rootNode) {
+			return;
+		}
+
+		const bounds = this.computeNodeZoomBounds(rootNode);
+		this.graphNotifier.zoomToBounds(bounds.x, bounds.y, bounds.width, bounds.height);
+	}
+
+	public zoomToNode(nodeId: string) {
+		const node = this.graphData.nodesMap.get(nodeId);
+		if (!node) {
+			return;
+		}
+
+		const bounds = this.computeNodeZoomBounds(node);
+		this.graphNotifier.zoomToBounds(bounds.x, bounds.y, bounds.width, bounds.height);
+	}
+
+	public searchNodes(query: string) {
+		const trimmed = query.trim().toLowerCase();
+		if (!trimmed) {
+			this.graphNotifier.setSearchResults([]);
+			return;
+		}
+
+		const maxResults = 50;
+		const results: SearchResult[] = [];
+		for (const node of this.graphData.nodes) {
+			if (node.label.toLowerCase().includes(trimmed) || node.id.toLowerCase().includes(trimmed)) {
+				results.push({id: node.id, label: node.label});
+				if (results.length >= maxResults) {
+					break;
+				}
+			}
+		}
+
+		this.graphNotifier.setSearchResults(results);
 	}
 
 	public setVisParameters(visParameters: VisParameters) {
