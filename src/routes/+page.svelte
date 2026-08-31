@@ -14,10 +14,16 @@
     import * as DropdownMenu from "$lib/components/ui/dropdown-menu/index.js";
     import EditorSettingsPanel from "./EditorSettingsPanel.svelte";
     import isEqual from "lodash.isequal";
-    import type { VisParameters } from "$lib/force-graph/types";
+    import { writable } from "svelte/store";
+    import type { GraphLayout, ShortcutStatus, VisParameters } from "$lib/force-graph/types";
 
     let graphComponent: Graph;
     let exporting = false;
+    let shortcutStatus = writable<ShortcutStatus>({ skipped: false });
+
+    const onComputeShortcuts = () => {
+        graphComponent?.computeShortcuts();
+    };
 
     const onExport = async (format: "svg" | "pdf") => {
         if (!graphComponent || exporting) {
@@ -56,8 +62,9 @@
 
     const rootPage = $page.url.origin + $page.url.pathname;
 
-    const onQueryFormSubmit = async (event: CustomEvent<QueryParameters>) => {
-        await updateUrl(event.detail, appParameters.visParameters, false);
+    const onQueryFormSubmit = async (event: CustomEvent<{queryParameters: QueryParameters; graphDirection: GraphLayout}>) => {
+        const {queryParameters: submittedQuery, graphDirection} = event.detail;
+        await updateUrl(submittedQuery, {...appParameters.visParameters, graphDirection}, false);
     };
 
     const onViewFormSubmit = async (event: CustomEvent<VisParameters>) => {
@@ -73,6 +80,7 @@
     <div class="relative h-screen max-h-screen w-full bg-white dark:bg-brand-950">
         <Graph
             bind:this={graphComponent}
+            bind:shortcutStatus
             {query}
             rootNode={appParameters.queryParameters.item}
             visParameters={appParameters.visParameters}
@@ -85,8 +93,10 @@
             <EditorSettingsPanel
                 {appParameters}
                 {visParameters}
+                shortcutStatus={$shortcutStatus}
                 on:querysubmit={onQueryFormSubmit}
                 on:vissubmit={onViewFormSubmit}
+                on:computeshortcuts={onComputeShortcuts}
             />
         </div>
 
