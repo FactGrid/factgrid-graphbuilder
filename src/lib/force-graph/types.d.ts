@@ -18,10 +18,36 @@ export type GraphEngineNotifier = {
 	setVisParameters(visParameters: VisParameters): void;
 	setTheme(theme: 'light' | 'dark'): void;
 	onLayoutComplete(x: number, y: number, width: number, height: number): void;
+	onLayoutError(message: string): void;
 	exportGraph(requestId: string): void;
+	setPinnedNode(nodeId: string | undefined): void;
+	computeShortcuts(): void;
+	setIsolatedConnections(nodeId: string | undefined): void;
+	zoomToFit(): void;
+	zoomToRoot(): void;
+	zoomToNode(nodeId: string): void;
+	searchNodes(query: string): void;
 };
 
 export type GraphState = 'loading' | 'ok' | 'error';
+
+export type ShortcutStatus = {
+	skipped: boolean;
+	progress?: {processed: number; total: number};
+};
+
+export type NodeContextMenuInfo = {
+	nodeId: string;
+	url: string;
+	label: string;
+	pos: Point;
+	canIsolateConnections: boolean;
+};
+
+export type SearchResult = {
+	id: string;
+	label: string;
+};
 
 export type GraphNotifier = {
 	setTooltip(contents: string | undefined): void;
@@ -31,6 +57,11 @@ export type GraphNotifier = {
 	setError(error: string | undefined): void;
 	onNodeClicked(url: string): void;
 	onGraphExportReady(requestId: string, payload: GraphExportPayload): void;
+	onNodeContextMenu(info: NodeContextMenuInfo): void;
+	setShortcutStatus(status: ShortcutStatus): void;
+	setIsolatedConnectionsLabel(label: string | undefined): void;
+	zoomToBounds(x: number, y: number, width: number, height: number): void;
+	setSearchResults(results: SearchResult[]): void;
 };
 
 export type GraphExportBounds = {x: number; y: number; width: number; height: number};

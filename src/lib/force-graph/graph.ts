@@ -1,8 +1,8 @@
-import {zoom as d3Zoom, zoomTransform as d3ZoomTransform, type D3ZoomEvent} from 'd3-zoom';
+import {zoom as d3Zoom, zoomIdentity, zoomTransform as d3ZoomTransform, type D3ZoomEvent} from 'd3-zoom';
 import {select as d3Select, type Selection} from 'd3-selection';
 import {drag as d3Drag, type D3DragEvent} from 'd3-drag';
 import {writable} from 'svelte/store';
-import type {GraphEngineNotifier, GraphExportPayload, GraphNotifier, GraphState, Point, VisParameters} from './types';
+import type {GraphEngineNotifier, GraphExportPayload, GraphNotifier, GraphState, NodeContextMenuInfo, Point, SearchResult, ShortcutStatus, VisParameters} from './types';
 
 const zoom2NodesFactor = 4;
 
@@ -57,6 +57,11 @@ export class Graph implements GraphNotifier {
 	readonly error = writable<string | undefined>();
 	readonly isDragging = writable<boolean>(false);
 	readonly pointerPos = writable<Point>({x: -1e12, y: -1e12});
+	readonly shortcutStatus = writable<ShortcutStatus>({skipped: false});
+	readonly contextMenu = writable<NodeContextMenuInfo | undefined>();
+	readonly pinnedNodeId = writable<string | undefined>();
+	readonly isolatedConnectionsLabel = writable<string | undefined>();
+	readonly searchResults = writable<SearchResult[]>([]);
 
 	private readonly resizeObserver: ResizeObserver;
 
@@ -150,6 +155,35 @@ export class Graph implements GraphNotifier {
 		void this.graphEngine.load(query, rootNode);
 	}
 
+	public computeShortcuts() {
+		void this.graphEngine.computeShortcuts();
+	}
+
+	public setPinnedNode(nodeId: string | undefined) {
+		this.pinnedNodeId.set(nodeId);
+		this.graphEngine.setPinnedNode(nodeId);
+	}
+
+	public setIsolatedConnections(nodeId: string | undefined) {
+		this.graphEngine.setIsolatedConnections(nodeId);
+	}
+
+	public zoomToFit() {
+		this.graphEngine.zoomToFit();
+	}
+
+	public zoomToRoot() {
+		this.graphEngine.zoomToRoot();
+	}
+
+	public zoomToNode(nodeId: string) {
+		this.graphEngine.zoomToNode(nodeId);
+	}
+
+	public searchNodes(query: string) {
+		this.graphEngine.searchNodes(query);
+	}
+
 	public setVisParameters(visParameters: VisParameters) {
 		this.draggable = visParameters.graphDirection === 'none';
 
@@ -178,15 +212,75 @@ export class Graph implements GraphNotifier {
 		window.open(url, '_blank');
 	}
 
-	public onLayoutComplete(x: number, y: number, width: number, height: number) {
+	public onNodeContextMenu(info: NodeContextMenuInfo) {
+		this.contextMenu.set(info);
+	}
+
+	public setShortcutStatus(status: ShortcutStatus) {
+		this.shortcutStatus.set(status);
+	}
+
+	public setIsolatedConnectionsLabel(label: string | undefined) {
+		this.isolatedConnectionsLabel.set(label);
+	}
+
+	public setSearchResults(results: SearchResult[]) {
+		this.searchResults.set(results);
+	}
+
+	// Shared by onLayoutComplete (a layout/reload just finished — jump instantly, an animated pan
+	// right as the graph first appears would just be extra motion to wait through) and zoomToBounds
+	// (a deliberate user navigation action — house/crosshair/search-result buttons — where a smooth
+	// transition helps keep track of where the view moved to). Animates by hand (plain RAF tween)
+	// rather than pulling in d3-transition just for this one call site.
+	private applyZoomToBounds(x: number, y: number, width: number, height: number, animate: boolean) {
 		const zoomK = Math.max(1e-12, Math.min(1e12,
 			this.canvas.width / width,
 			this.canvas.height / height,
 		)) / window.devicePixelRatio;
 
-		this.zoomBehavior.translateTo(this.d3Canvas, x + (width / 2), y + (height / 2));
-		this.zoomBehavior.scaleTo(this.d3Canvas, zoomK);
-		this.graphEngine.requestRedraw();
+		const cssWidth = this.canvas.width / window.devicePixelRatio;
+		const cssHeight = this.canvas.height / window.devicePixelRatio;
+		const centerX = x + (width / 2);
+		const centerY = y + (height / 2);
+		const targetTransform = zoomIdentity
+			.translate((cssWidth / 2) - (centerX * zoomK), (cssHeight / 2) - (centerY * zoomK))
+			.scale(zoomK);
+
+		if (!animate) {
+			this.zoomBehavior.transform(this.d3Canvas, targetTransform);
+			this.graphEngine.requestRedraw();
+			return;
+		}
+
+		const start = d3ZoomTransform(this.canvas);
+		const duration = 400;
+		const startTime = performance.now();
+
+		const step = (now: number) => {
+			const t = Math.min(1, (now - startTime) / duration);
+			const eased = 1 - ((1 - t) ** 3); // Ease-out cubic
+			this.zoomBehavior.transform(this.d3Canvas, zoomIdentity
+				.translate(
+					start.x + ((targetTransform.x - start.x) * eased),
+					start.y + ((targetTransform.y - start.y) * eased),
+				)
+				.scale(start.k + ((targetTransform.k - start.k) * eased)));
+
+			if (t < 1) {
+				requestAnimationFrame(step);
+			}
+		};
+
+		requestAnimationFrame(step);
+	}
+
+	public onLayoutComplete(x: number, y: number, width: number, height: number) {
+		this.applyZoomToBounds(x, y, width, height, false);
+	}
+
+	public zoomToBounds(x: number, y: number, width: number, height: number) {
+		this.applyZoomToBounds(x, y, width, height, true);
 	}
 
 	public setState(state: GraphState): void {
