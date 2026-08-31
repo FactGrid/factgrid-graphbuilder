@@ -34,7 +34,7 @@
             unit_property: "P834",
             lang: "de",
         },
-        "OhdABTaxonomy of Speculoos baker": {
+        "OhdAB-Taxonomy of Speculoos baker": {
             property: "P1007",
             item: "Q673131",
             graph_direction: "up",
