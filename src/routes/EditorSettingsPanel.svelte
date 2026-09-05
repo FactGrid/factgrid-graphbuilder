@@ -64,50 +64,61 @@
     };
 </script>
 
-{#if expanded}
-    <div in:morphIn out:morphOut class="origin-top-left">
-        <Card
-            class="w-80 max-w-[calc(100vw-2rem)] max-h-[calc(100vh-2rem)] overflow-y-auto p-4 origin-top-left"
+<!--
+    Both branches below occupy the same grid cell ([grid-area:1/1]) instead of being plain flex
+    siblings. With the previous plain-flow markup, the moment `expanded` flips, Svelte mounts the
+    incoming element before the outgoing one's out-transition has removed it from the DOM — so for
+    that brief overlap the flex-col container held both at once, and the taller incoming box could
+    render below the still-present outgoing one until it was removed, producing a visible jump.
+    Stacking them in one shared grid cell means both are always anchored at the exact same
+    top-left position, so there's nothing for the removal to shift.
+-->
+<div class="grid items-start justify-items-start">
+    {#if expanded}
+        <div in:morphIn out:morphOut class="[grid-area:1/1] origin-top-left">
+            <Card
+                class="w-80 max-w-[calc(100vw_-_2rem)] max-h-[calc(100vh_-_14rem)] overflow-y-auto p-4 origin-top-left"
+            >
+                <div class="flex items-start justify-between">
+                    <Heading2 class="mt-0 text-2xl font-semibold">Data settings</Heading2>
+                    <button
+                        type="button"
+                        on:click={() => (expanded = false)}
+                        aria-label="Collapse settings"
+                        class="flex-none flex items-center justify-center w-8 h-8 -mr-1 -mt-1 rounded-md
+                        text-brand-500 hover:bg-brand-100 dark:text-brand-400 dark:hover:bg-brand-800"
+                    >
+                        <IconEx path={mdiClose} class="w-5 h-5 fill-current" />
+                    </button>
+                </div>
+
+                <div class="mt-6">
+                    <QueryForm {appParameters} on:submit={onQuerySubmit} />
+                </div>
+
+                <Heading2 class="text-2xl font-semibold mt-8">Visualization settings</Heading2>
+                <div class="mt-6">
+                    <ViewForm
+                        {visParameters}
+                        {shortcutStatus}
+                        on:submit={onVisSubmit}
+                        on:computeshortcuts={onComputeShortcuts}
+                    />
+                </div>
+            </Card>
+        </div>
+    {:else}
+        <button
+            type="button"
+            in:morphIn
+            out:morphOut
+            on:click={() => (expanded = true)}
+            class="[grid-area:1/1] flex items-center gap-2 rounded-md border border-brand-300 bg-white px-3 h-10
+            text-brand-800 shadow-sm hover:bg-brand-100 transition-colors origin-top-left
+            dark:border-brand-700 dark:bg-brand-900 dark:text-brand-200 dark:hover:bg-brand-800"
         >
-            <div class="flex items-start justify-between">
-                <Heading2 class="mt-0 text-2xl font-semibold">Data settings</Heading2>
-                <button
-                    type="button"
-                    on:click={() => (expanded = false)}
-                    aria-label="Collapse settings"
-                    class="flex-none flex items-center justify-center w-8 h-8 -mr-1 -mt-1 rounded-md
-                    text-brand-500 hover:bg-brand-100 dark:text-brand-400 dark:hover:bg-brand-800"
-                >
-                    <IconEx path={mdiClose} class="w-5 h-5 fill-current" />
-                </button>
-            </div>
-
-            <div class="mt-6">
-                <QueryForm {appParameters} on:submit={onQuerySubmit} />
-            </div>
-
-            <Heading2 class="text-2xl font-semibold mt-8">Visualization settings</Heading2>
-            <div class="mt-6">
-                <ViewForm
-                    {visParameters}
-                    {shortcutStatus}
-                    on:submit={onVisSubmit}
-                    on:computeshortcuts={onComputeShortcuts}
-                />
-            </div>
-        </Card>
-    </div>
-{:else}
-    <button
-        type="button"
-        in:morphIn
-        out:morphOut
-        on:click={() => (expanded = true)}
-        class="flex items-center gap-2 rounded-md border border-brand-300 bg-white px-3 h-10
-        text-brand-800 shadow-sm hover:bg-brand-100 transition-colors origin-top-left
-        dark:border-brand-700 dark:bg-brand-900 dark:text-brand-200 dark:hover:bg-brand-800"
-    >
-        <IconEx path={mdiCog} class="w-5 h-5 fill-current" />
-        Settings
-    </button>
-{/if}
+            <IconEx path={mdiCog} class="w-5 h-5 fill-current" />
+            Settings
+        </button>
+    {/if}
+</div>

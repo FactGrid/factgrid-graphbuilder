@@ -72,6 +72,18 @@ export class ForceEngine implements LayoutEngine {
 		graphData.treeParent = undefined;
 
 		for (const node of graphData.nodes) {
+			// Coming from a hierarchical (block-shape) layout, these positions are wherever the tree
+			// layout put them — for a large graph that can be thousands of pixels wide, far more
+			// spread out than the warmup ticks below are tuned to collapse. d3-force only assigns its
+			// own compact starting position (a tight spiral, see d3-force-3d's initializeNodes) to a
+			// node whose x/y is missing, so clearing them here is what makes the simulation start
+			// from a sane, bounded layout instead of inheriting the tree's spread and settling — after
+			// only 100 ticks — on a "zoom to fit" so zoomed out every node is a sub-pixel dot.
+			if (node.shape === 'block') {
+				node.x = undefined;
+				node.y = undefined;
+			}
+
 			node.shape = 'point';
 		}
 

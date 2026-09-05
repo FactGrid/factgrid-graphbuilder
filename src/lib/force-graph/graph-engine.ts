@@ -33,6 +33,7 @@ export class GraphEngine implements GraphEngineNotifier {
 	private shortcutAbortController: AbortController | undefined;
 	private pinnedNodeId: string | undefined;
 	private layoutErrorPending = false;
+	private layoutUpdateToken = 0;
 	private zoomTransform: ZoomSettings = {x: 0, y: 0, k: 1};
 	private focusedNodes: Set<NodeObject> | undefined;
 	private focusedLinks: Set<LinkObject> | undefined;
@@ -120,6 +121,10 @@ export class GraphEngine implements GraphEngineNotifier {
 	}
 
 	public onLayoutComplete(x: number, y: number, width: number, height: number) {
+		// Only ever reached on the success path (a failed layout calls onLayoutError instead, which
+		// sets 'error' and never onLayoutComplete afterward) — safe to unconditionally clear a
+		// 'loading' state set by setLayoutOptions for a layout switch that's now finished.
+		this.graphNotifier.setState('ok');
 		this.graphNotifier.onLayoutComplete(x, y, width, height);
 	}
 
@@ -740,12 +745,27 @@ export class GraphEngine implements GraphEngineNotifier {
 		const nodes = (this.focusedNodes ?? (bounds ? this.graphData.nodes.filter(node => this.isNodeInBounds(node, bounds)) : this.graphData.nodes)) as Iterable<DrawNode>;
 		const isPoint = this.graphData.nodes[0]?.shape === 'point';
 
+		// Labels are only ever actually drawn under this same condition (see paintCanvas) — a large
+		// force-directed graph skips them regardless of the setting. Giving a node's shadow hit-box a
+		// label-sized rectangle when nothing is drawn there creates an invisible, easily 100+px-wide
+		// strip that has nothing to do with where the dot visually is. In a dense point-shape graph
+		// that phantom strip can extend well into a neighboring node's circle, so hovering that
+		// neighbor picks up the wrong (and, from the pointer's position, seemingly unrelated) node.
+		const labelHitboxVisible = isPoint && !this.graphData.isLargeGraph && this.showLabels;
+
 		for (const node of nodes) {
 			if (isPoint) {
 				const {textWidth, radius, x, y, indexColor} = node;
 				ctx.fillStyle = indexColor;
-				ctx.fillRect(x - radius, y - radius, 2 * radius, 2 * radius);
-				ctx.fillRect(x + radius + this.pointOffset, y - 5, textWidth, 10);
+				// A circle here (matching the circle actually drawn in drawNodes), not a bounding
+				// square — a square's corners reach past the visible dot and, in a tightly packed
+				// cluster, can overlap a neighboring node's circle, again stealing its hover/tooltip.
+				ctx.beginPath();
+				ctx.arc(x, y, radius, 0, 2 * Math.PI);
+				ctx.fill();
+				if (labelHitboxVisible) {
+					ctx.fillRect(x + radius + this.pointOffset, y - 5, textWidth, 10);
+				}
 			} else {
 				const {textWidth, textHeight, x, y, indexColor} = node;
 				ctx.fillStyle = indexColor;
@@ -843,16 +863,45 @@ export class GraphEngine implements GraphEngineNotifier {
 		}
 
 		const cls = graphLayout === 'none' ? ForceEngine : ElkEngine;
-		if (this.engine === undefined || !(this.engine instanceof cls)) {
-			this.engine = createLayoutEngine();
-			this.engine.setGraphData(this.graphData);
+		const needsNewEngine = this.engine === undefined || !(this.engine instanceof cls);
+
+		const runUpdate = () => {
+			if (needsNewEngine) {
+				this.engine = createLayoutEngine();
+				this.engine.setGraphData(this.graphData);
+			} else if (this.engine instanceof ElkEngine && this.engine.graphLayout !== graphLayout) {
+				this.engine.graphLayout = graphLayout as ElkDirection;
+				this.engine.update();
+			}
+		};
+
+		// The very first call (from the constructor, before any data has been loaded) always
+		// creates the initial engine against an empty graph — instant either way, and showing a
+		// loading spinner for it would just be a flash of UI before anything is even on screen.
+		if (this.graphData.nodes.length === 0) {
+			runUpdate();
 			return;
 		}
 
-		if (this.engine instanceof ElkEngine && this.engine.graphLayout !== graphLayout) {
-			this.engine.graphLayout = graphLayout as ElkDirection;
-			this.engine.update();
-		}
+		// Switching layouts can be expensive on a large graph — most notably the force-directed
+		// engine's warmup ticks, which run the full d3-force simulation synchronously (see
+		// ForceEngine.update). Without this, the switch had no visible feedback at all: the canvas
+		// just stopped responding for however long the recompute took, then jumped straight to the
+		// result, which reads as a freeze-then-blank-out rather than a graph that's loading. Setting
+		// 'loading' before scheduling the actual work (rather than right before it, in the same
+		// tick) matters because setGraphData/update can otherwise start blocking before the state
+		// change has had a chance to actually reach the screen — irrelevant when this engine runs in
+		// its own worker (the common case — see graph.ts), but still correct for the no-OffscreenCanvas
+		// fallback where engine and UI share a thread.
+		this.graphNotifier.setState('loading');
+		const token = ++this.layoutUpdateToken;
+		requestAnimationFrame(() => {
+			if (token !== this.layoutUpdateToken) {
+				return; // Superseded by another layout switch before this one got to run.
+			}
+
+			runUpdate();
+		});
 	}
 }
 

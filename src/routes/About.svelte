@@ -39,11 +39,10 @@
             item: "Q673131",
             graph_direction: "up",
         },
-        "Whole OhdAB-Dataset [very large Graph]": {
+        "Whole OhdAB-Dataset (large Graph)": {
             property: "P1007",
             item: "Q657045",
             mode: "reverse",
-            graph_direction: "down",
         },
     };
 </script>

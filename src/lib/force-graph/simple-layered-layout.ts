@@ -1,13 +1,89 @@
 import type {SparqlGraphData} from './graph-data';
-import type {ElkDirection, NodeObject} from './types';
+import type {ElkDirection, LinkObject, NodeObject} from './types';
 
-const horizontalGap = 20;
+const siblingGap = 20;
+const depthGap = 40;
 const verticalSpacing = 80;
 
 // Real ELK positions block-shape nodes by their top-left corner, sized textWidth+10 x
 // textHeight+10 (see elk-engine.ts's non-large-graph path) — matched here so labels aren't
 // squeezed into less space than they need.
 const ownWidth = (node: NodeObject) => node.textWidth + 10;
+const ownHeight = (node: NodeObject) => node.textHeight + 10;
+
+// Siblings are laid out side by side along the "along" axis and levels are stacked along the
+// "across" axis. Which screen axis is which depends on the direction: for down/up the tree grows
+// vertically, so siblings sit side by side horizontally (along = width) and levels stack
+// vertically (across = height); for left/right it's the other way around. Using the wrong node
+// dimension for either axis is exactly what let boxes overlap in left/right layouts — a wide
+// label needs its width respected on whichever axis it actually occupies.
+const isVerticalTree = (direction: ElkDirection) => direction === 'down' || direction === 'up';
+const alongSize = (node: NodeObject, direction: ElkDirection) => (isVerticalTree(direction) ? ownWidth(node) : ownHeight(node));
+const acrossSize = (node: NodeObject, direction: ElkDirection) => (isVerticalTree(direction) ? ownHeight(node) : ownWidth(node));
+
+// Box-edge midpoints, used as the fixed start/end anchors for the orthogonal connectors below —
+// matches where a real ELK-routed edge touches a block-shape node (the middle of whichever side
+// faces the other node), so the fallback layout's edges read the same way ELK's do.
+const rightMid = (node: NodeObject): [number, number] => [node.x! + ownWidth(node), node.y! + (ownHeight(node) / 2)];
+const leftMid = (node: NodeObject): [number, number] => [node.x!, node.y! + (ownHeight(node) / 2)];
+const bottomMid = (node: NodeObject): [number, number] => [node.x! + (ownWidth(node) / 2), node.y! + ownHeight(node)];
+const topMid = (node: NodeObject): [number, number] => [node.x! + (ownWidth(node) / 2), node.y!];
+
+// Real ELK's orthogonal edge routing is itself part of the recursive "layered" algorithm this
+// fallback exists to avoid (see computeSimpleLayeredLayout's own doc comment) — but a strict,
+// single-bend elbow connector (out of the source's facing side, across, into the target's facing
+// side) is O(1) per edge and needs none of that: it's exactly what a tree layout's edges look like
+// once node positions are already known. This runs for every link (not just spanning-tree edges),
+// so extra parents from cycles/DAG merges still get a reasonable (if not crossing-minimized) path.
+const setTreeEdgeSections = (links: Iterable<LinkObject>, direction: ElkDirection) => {
+	for (const link of links) {
+		const {source, target} = link;
+		let start: [number, number];
+		let end: [number, number];
+		let bend1: [number, number];
+		let bend2: [number, number];
+
+		switch (direction) {
+			case 'right': {
+				start = rightMid(source);
+				end = leftMid(target);
+				const bendX = (start[0] + end[0]) / 2;
+				bend1 = [bendX, start[1]];
+				bend2 = [bendX, end[1]];
+				break;
+			}
+
+			case 'left': {
+				start = leftMid(source);
+				end = rightMid(target);
+				const bendX = (start[0] + end[0]) / 2;
+				bend1 = [bendX, start[1]];
+				bend2 = [bendX, end[1]];
+				break;
+			}
+
+			case 'down': {
+				start = bottomMid(source);
+				end = topMid(target);
+				const bendY = (start[1] + end[1]) / 2;
+				bend1 = [start[0], bendY];
+				bend2 = [end[0], bendY];
+				break;
+			}
+
+			case 'up': {
+				start = topMid(source);
+				end = bottomMid(target);
+				const bendY = (start[1] + end[1]) / 2;
+				bend1 = [start[0], bendY];
+				bend2 = [end[0], bendY];
+				break;
+			}
+		}
+
+		link.sections = [start, bend1, bend2, end];
+	}
+};
 
 type TreeShape = {
 	depthOf: Map<NodeObject, number>;
@@ -15,18 +91,18 @@ type TreeShape = {
 	bfsOrder: NodeObject[];
 };
 
-// Each node's required horizontal slot width, in pixels — either its own label width (a leaf, or a
-// node wider than its children combined) or the sum of its children's slot widths, whichever is
-// larger. bfsOrder is non-decreasing in depth, so scanning it in reverse guarantees every child is
-// processed before its parent — the dependency a recursive post-order traversal would normally
-// provide.
-const computeSlotWidths = (shape: TreeShape): Map<NodeObject, number> => {
+// Each node's required slot size along the "along" axis, in pixels — either its own size on that
+// axis (a leaf, or a node bigger than its children combined) or the sum of its children's slot
+// sizes, whichever is larger. bfsOrder is non-decreasing in depth, so scanning it in reverse
+// guarantees every child is processed before its parent — the dependency a recursive post-order
+// traversal would normally provide.
+const computeSlotWidths = (shape: TreeShape, sizeOf: (node: NodeObject) => number): Map<NodeObject, number> => {
 	const slotWidth = new Map<NodeObject, number>();
 	for (let i = shape.bfsOrder.length - 1; i >= 0; i--) {
 		const node = shape.bfsOrder[i];
 		const kids = shape.children.get(node);
 		if (!kids || kids.length === 0) {
-			slotWidth.set(node, ownWidth(node) + horizontalGap);
+			slotWidth.set(node, sizeOf(node) + siblingGap);
 			continue;
 		}
 
@@ -35,7 +111,7 @@ const computeSlotWidths = (shape: TreeShape): Map<NodeObject, number> => {
 			childrenWidth += slotWidth.get(kid)!;
 		}
 
-		slotWidth.set(node, Math.max(ownWidth(node) + horizontalGap, childrenWidth));
+		slotWidth.set(node, Math.max(sizeOf(node) + siblingGap, childrenWidth));
 	}
 
 	return slotWidth;
@@ -135,13 +211,33 @@ export const computeSimpleLayeredLayout = (graphData: SparqlGraphData, direction
 	}
 
 	const shape: TreeShape = {depthOf, children, bfsOrder};
-	const slotWidth = computeSlotWidths(shape);
+	const slotWidth = computeSlotWidths(shape, node => alongSize(node, direction));
 	const slotStart = assignSlotStarts(shape, slotWidth, roots);
+
+	// Depth levels are stacked along the "across" axis by actual box extent on that axis, not a
+	// fixed spacing — a fixed gap works for down/up (where the across axis is box height, which
+	// barely varies) but not for left/right (where it's box width, which can vary hugely with
+	// label length), and using it there is what let adjacent columns overlap.
+	let maxDepth = 0;
+	const maxAcrossAtDepth = new Map<number, number>();
+	for (const node of nodes) {
+		const depth = depthOf.get(node)!;
+		maxDepth = Math.max(maxDepth, depth);
+		const size = acrossSize(node, direction);
+		maxAcrossAtDepth.set(depth, Math.max(maxAcrossAtDepth.get(depth) ?? 0, size));
+	}
+
+	const acrossOffsetAtDepth = new Map<number, number>();
+	let acrossCursor = 0;
+	for (let depth = 0; depth <= maxDepth; depth++) {
+		acrossOffsetAtDepth.set(depth, acrossCursor);
+		acrossCursor += (maxAcrossAtDepth.get(depth) ?? 0) + depthGap;
+	}
 
 	for (const node of nodes) {
 		// Center the node's own box within its (possibly wider, if it has many descendants) slot.
-		const along = slotStart.get(node)! + ((slotWidth.get(node)! - ownWidth(node)) / 2);
-		const across = depthOf.get(node)! * verticalSpacing;
+		const along = slotStart.get(node)! + ((slotWidth.get(node)! - alongSize(node, direction)) / 2);
+		const across = acrossOffsetAtDepth.get(depthOf.get(node)!)!;
 		switch (direction) {
 			case 'down': {
 				node.x = along;
@@ -180,6 +276,8 @@ export const computeSimpleLayeredLayout = (graphData: SparqlGraphData, direction
 
 	graphData.treeParent = treeParent;
 
+	setTreeEdgeSections(graphData.forceLinks, direction);
+
 	if (nodes.length === 0) {
 		return {x: 0, y: 0, width: 100, height: 100};
 	}
@@ -194,7 +292,7 @@ export const computeSimpleLayeredLayout = (graphData: SparqlGraphData, direction
 	// out, and the SVG/PDF export (computeExportBounds in graph-engine.ts) covers the true full
 	// extent regardless of this initial viewport choice.
 	const initialViewBreadth = 600;
-	const initialViewDepth = verticalSpacing * 5;
+	const initialViewDepth = acrossOffsetAtDepth.get(Math.min(5, maxDepth + 1)) ?? (verticalSpacing * 5);
 	const root = roots[0];
 	const rootX = root.x!;
 	const rootY = root.y!;
@@ -296,8 +394,8 @@ export const layoutConnectedSubgraph = (
 	const forwardShape = buildTreeShape(target, node => node.edgesOut.map(edge => edge.target), forwardAllowed);
 	const reverseShape = buildTreeShape(target, node => node.edgesIn.map(edge => edge.source), reverseAllowed);
 
-	const forwardWidths = computeSlotWidths(forwardShape);
-	const reverseWidths = computeSlotWidths(reverseShape);
+	const forwardWidths = computeSlotWidths(forwardShape, ownWidth);
+	const reverseWidths = computeSlotWidths(reverseShape, ownWidth);
 
 	const forwardStarts = assignSlotStarts(forwardShape, forwardWidths, [target]);
 	const reverseStarts = assignSlotStarts(reverseShape, reverseWidths, [target]);
